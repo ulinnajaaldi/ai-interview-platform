@@ -33,15 +33,18 @@ export default function FitGapReportPage() {
       setGenerating(false);
     } catch (e: any) {
       if (e?.response?.status === 404) {
-        try {
-          await portfoliosApi.triggerFitGap(portfolio.id, Number(vacancyId));
-          setGenerating(true);
-        } catch {
-          setGenerating(false);
+        if (!generating) {
+          try {
+            await portfoliosApi.triggerFitGap(portfolio.id, Number(vacancyId));
+          } catch {
+            setGenerating(false);
+            return;
+          }
         }
+        setGenerating(true);
       }
     }
-  }, [portfolio, vacancyId]);
+  }, [portfolio, vacancyId, generating]);
 
   useEffect(() => {
     sessionsApi
