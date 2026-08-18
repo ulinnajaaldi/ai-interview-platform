@@ -31,6 +31,7 @@ import SkillCard from "@/components/assessment/SkillCard";
 import SkillPicker from "@/components/assessment/SkillPicker";
 import { ArrowLeft, Plus, Loader2 } from "lucide-react";
 import { useGetAssessment, useUpdateAssessment } from "@/useCases/assessments";
+import { FormAlert } from "@/components/ui/form-feedback";
 import { TIME_LIMIT_OPTIONS } from "@/utils/constants";
 import type { AssessmentSkill } from "@/types";
 import type { AssessmentFormValues } from "./AssessmentNewPage";
@@ -204,7 +205,7 @@ export default function AssessmentEditPage() {
         </div>
 
         <Separator />
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        <FormAlert message={error} />
 
         <div className="flex justify-end gap-2">
           <Button

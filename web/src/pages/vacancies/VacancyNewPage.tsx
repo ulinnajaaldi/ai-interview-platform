@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import LevelRadio from "@/components/assessment/LevelRadio";
 import SkillPicker from "@/components/assessment/SkillPicker";
 import { useCreateVacancy } from "@/useCases/vacancies";
+import { FormAlert, FieldError } from "@/components/ui/form-feedback";
 import { ArrowLeft, Plus, X, Loader2 } from "lucide-react";
 import type { VacancySkill } from "@/types";
 
@@ -75,8 +76,11 @@ export default function VacancyNewPage() {
           <Input
             id="role_title"
             placeholder="Senior Frontend Engineer"
-            {...register("role_title", { required: true })}
+            aria-invalid={!!errors.role_title}
+            aria-describedby={errors.role_title ? "role_title-error" : undefined}
+            {...register("role_title", { required: "Role title is required" })}
           />
+          <FieldError id="role_title-error" message={errors.role_title?.message} />
         </div>
 
         <Separator />
@@ -87,22 +91,23 @@ export default function VacancyNewPage() {
 
           {fields.length === 0 ? (
             <div className="border rounded-lg p-4 text-center text-sm text-muted-foreground">
-              No skills added yet.
+              No skills added yet. Click below to add an expected skill.
             </div>
           ) : (
             <div className="space-y-2">
               {fields.map((field, index) => (
                 <div key={field.id} className="border rounded-lg p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">
+                  <div className="flex items-center justify-between min-w-0">
+                    <span className="text-sm font-medium truncate">
                       {watch(`skills.${index}.skill_label`)}
                     </span>
                     <button
                       type="button"
                       onClick={() => remove(index)}
-                      className="text-muted-foreground hover:text-destructive"
+                      aria-label={`Remove skill ${watch(`skills.${index}.skill_label`)}`}
+                      className="ml-3 text-muted-foreground hover:text-destructive shrink-0"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-4 w-4" aria-hidden />
                     </button>
                   </div>
                   <div className="space-y-1">
@@ -146,7 +151,7 @@ export default function VacancyNewPage() {
           />
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        <FormAlert message={error} />
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={() => navigate("/vacancies")}>

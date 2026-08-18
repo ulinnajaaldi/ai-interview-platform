@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useSetAtom } from "jotai";
 import { authAtom } from "@/stores/authAtom";
 import { useLogin } from "@/useCases/auth";
+import { FormAlert } from "@/components/ui/form-feedback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,7 +63,7 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          <FormAlert message={error} />
 
           <Button type="submit" className="w-full" disabled={login.isPending}>
             {login.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

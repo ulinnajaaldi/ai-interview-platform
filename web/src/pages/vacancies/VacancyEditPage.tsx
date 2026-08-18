@@ -93,14 +93,17 @@ export default function VacancyEditPage() {
           <Label>Expected skills</Label>
           {fields.map((field, index) => (
             <div key={field.id} className="border rounded-lg p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">{watch(`skills.${index}.skill_label`)}</span>
+              <div className="flex items-center justify-between min-w-0">
+                <span className="text-sm font-medium truncate">
+                  {watch(`skills.${index}.skill_label`)}
+                </span>
                 <button
                   type="button"
                   onClick={() => remove(index)}
-                  className="text-muted-foreground hover:text-destructive"
+                  aria-label={`Remove skill ${watch(`skills.${index}.skill_label`)}`}
+                  className="ml-3 text-muted-foreground hover:text-destructive shrink-0"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-4 w-4" aria-hidden />
                 </button>
               </div>
               <LevelRadio
