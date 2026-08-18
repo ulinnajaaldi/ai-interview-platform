@@ -12,8 +12,7 @@ export const sessionsApi = {
       session: { reason },
     }),
 
-  getCoverage: (id: number) =>
-    api.get<CoverageMap>(`/sessions/${id}/coverage`),
+  getCoverage: (id: number) => api.get<CoverageMap>(`/sessions/${id}/coverage`),
 
   getTranscript: (id: number, fromTurn?: number) =>
     api.get<{ turns: TranscriptTurn[]; total: number }>(`/sessions/${id}/transcript`, {
@@ -29,8 +28,7 @@ export const sessionsApi = {
   markPortfolioReviewed: (id: number) =>
     api.post<{ portfolio: Portfolio }>(`/sessions/${id}/portfolio/mark_reviewed`),
 
-  getCandidateInfo: (token: string) =>
-    api.get<CandidateInfo>(`/sessions/${token}/candidate`),
+  getCandidateInfo: (token: string) => api.get<CandidateInfo>(`/sessions/${token}/candidate`),
 
   getCandidateTranscript: (token: string, limit = 15) =>
     api.get<{ turns: Pick<TranscriptTurn, "turn_number" | "speaker" | "text">[] }>(
