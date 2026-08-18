@@ -309,7 +309,9 @@ export default function LiveMonitorPage() {
         </CardHeader>
         <CardContent>
           {transcript.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No transcript yet.</p>
+            <p className="text-xs text-muted-foreground text-center py-4">
+              {sessionActive ? "Waiting for conversation to begin…" : "No transcript yet."}
+            </p>
           ) : (
             <div className="space-y-2">
               {transcript.map((turn) => (

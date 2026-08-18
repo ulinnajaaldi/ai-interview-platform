@@ -187,37 +187,17 @@ export default function PortfolioPage() {
       {/* Ready state */}
       {!generating && portfolio?.generation_status === "complete" && (
         <>
-          {/* Configured skills */}
-          <div className="space-y-3">
-            <h2 className="text-sm font-semibold">Configured Skills</h2>
-            {portfolio.skills
-              .filter((s) => !s.is_discovered)
-              .map((skill) => (
-                <SkillPortfolioCard
-                  key={skill.id}
-                  skill={skill}
-                  override={overrides[skill.id]}
-                  onOverrideSaved={(o) => handleOverrideSaved(skill.id, o)}
-                />
-              ))}
-          </div>
-
-          {/* Discovered skills */}
-          {portfolio.skills.some((s) => s.is_discovered) && (
+          {portfolio.skills.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">
+              No skills were detected — the transcript may have been too short.
+            </p>
+          ) : (
             <>
-              <Separator />
+              {/* Configured skills */}
               <div className="space-y-3">
-                <div>
-                  <h2 className="text-sm font-semibold flex items-center gap-1.5">
-                    <Zap className="h-4 w-4 text-amber-500" />
-                    Discovered Skills
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    Skills the AI probed that were not in the original assessment
-                  </p>
-                </div>
+                <h2 className="text-sm font-semibold">Configured Skills</h2>
                 {portfolio.skills
-                  .filter((s) => s.is_discovered)
+                  .filter((s) => !s.is_discovered)
                   .map((skill) => (
                     <SkillPortfolioCard
                       key={skill.id}
@@ -227,6 +207,34 @@ export default function PortfolioPage() {
                     />
                   ))}
               </div>
+
+              {/* Discovered skills */}
+              {portfolio.skills.some((s) => s.is_discovered) && (
+                <>
+                  <Separator />
+                  <div className="space-y-3">
+                    <div>
+                      <h2 className="text-sm font-semibold flex items-center gap-1.5">
+                        <Zap className="h-4 w-4 text-amber-500" />
+                        Discovered Skills
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        Skills the AI probed that were not in the original assessment
+                      </p>
+                    </div>
+                    {portfolio.skills
+                      .filter((s) => s.is_discovered)
+                      .map((skill) => (
+                        <SkillPortfolioCard
+                          key={skill.id}
+                          skill={skill}
+                          override={overrides[skill.id]}
+                          onOverrideSaved={(o) => handleOverrideSaved(skill.id, o)}
+                        />
+                      ))}
+                  </div>
+                </>
+              )}
             </>
           )}
 
