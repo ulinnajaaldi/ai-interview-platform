@@ -157,6 +157,7 @@ export function useAudioWebSocket({
   const disconnect = useCallback(() => {
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     reconnectAttemptsRef.current = RECONNECT_DELAYS.length; // prevent reconnect
+    sessionEndedRef.current = true;
     wsRef.current?.close();
   }, []);
 
