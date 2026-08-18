@@ -17,8 +17,9 @@ module Gemini
     class RateLimitError < ApiError; end
     class TimeoutError < ApiError; end
 
-    def initialize(model: nil, api_key: nil, timeout: 60)
+    def initialize(model: nil, api_key: nil, timeout: 60, fallback_models: [])
       @model = model
+      @fallback_models = Array(fallback_models)
       @api_key = api_key || ENV.fetch('GEMINI_API_KEY')
       @timeout = timeout
       @connection = build_connection
@@ -26,7 +27,30 @@ module Gemini
 
     # Generates content using Gemini REST API.
     # Returns parsed JSON response body.
+    # Retried across @fallback_models when the configured model is rejected (404 model-not-found).
     def generate_content(prompt, temperature: 0.2)
+      candidates = ([@model] + @fallback_models).compact.uniq
+      last_error = nil
+
+      candidates.each_with_index do |candidate, i|
+        @model = candidate
+        begin
+          return perform_generate(prompt, temperature)
+        rescue ApiError => e
+          last_error = e
+          raise unless fallback_condition?(e)
+          raise if i == candidates.length - 1
+
+          Rails.logger.warn("[Gemini::HttpClient] Model #{candidate} rejected (#{e.message}) — falling back to #{candidates[i + 1]}")
+        end
+      end
+
+      raise last_error
+    end
+
+    private
+
+    def perform_generate(prompt, temperature)
       response = @connection.post(generate_url, request_body(prompt, temperature), request_headers)
       parse_response(response)
     rescue Faraday::TimeoutError => e
@@ -35,7 +59,15 @@ module Gemini
       raise ApiError.new("Gemini API error: #{e.message}")
     end
 
-    private
+    # Triggers model fallback when the current model is rejected or unusable right now:
+    # 404 not-found/not-supported, 429 quota, or 503 high demand.
+    def fallback_condition?(error)
+      case error.status
+      when 404 then error.body.to_s.match?(/not found|not supported/i)
+      when 429, 503 then true
+      else false
+      end
+    end
 
     def generate_url
       "#{BASE_URL}/models/#{@model}:generateContent"
