@@ -40,6 +40,7 @@ Rails.application.routes.draw do
           get  :transcript
           get  :portfolio, to: 'portfolios#show'
           post 'portfolio/regenerate', to: 'portfolios#regenerate'
+          post 'portfolio/mark_reviewed', to: 'portfolios#mark_reviewed'
         end
       end
 

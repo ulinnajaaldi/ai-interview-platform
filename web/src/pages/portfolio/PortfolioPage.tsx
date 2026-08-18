@@ -16,6 +16,7 @@ export default function PortfolioPage() {
   const { id, sessionId } = useParams<{ id: string; sessionId: string }>();
   const navigate = useNavigate();
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
+  const reviewed = !!portfolio?.reviewed_at;
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [overrides, setOverrides] = useState<Record<number, AssessorOverride>>({});
@@ -134,7 +135,7 @@ export default function PortfolioPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleExport("pdf")}
-                disabled={!!exporting}
+                disabled={!!exporting || !reviewed}
               >
                 {exporting === "pdf" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
                 PDF
@@ -143,7 +144,7 @@ export default function PortfolioPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => handleExport("json")}
-                disabled={!!exporting}
+                disabled={!!exporting || !reviewed}
               >
                 {exporting === "json" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5 mr-1" />}
                 JSON
@@ -231,6 +232,25 @@ export default function PortfolioPage() {
 
           <Separator />
 
+          {/* Mark reviewed gate */}
+          {!reviewed && portfolio?.generation_status === "complete" && (
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await sessionsApi.markPortfolioReviewed(Number(sessionId));
+                  setPortfolio(prev => prev ? { ...prev, reviewed_at: new Date().toISOString() } : prev);
+                }}
+              >
+                Mark Reviewed
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Confirm you have reviewed each skill card before running Fit/Gap.
+              </span>
+            </div>
+          )}
+
           {/* Fit/Gap */}
           <div className="flex items-center gap-3">
             <Select value={selectedVacancy} onValueChange={setSelectedVacancy}>
@@ -245,7 +265,7 @@ export default function PortfolioPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button onClick={handleRunFitGap} disabled={!selectedVacancy}>
+            <Button onClick={handleRunFitGap} disabled={!selectedVacancy || !reviewed}>
               Run Fit/Gap Analysis →
             </Button>
           </div>
