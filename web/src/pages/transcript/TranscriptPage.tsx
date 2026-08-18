@@ -1,27 +1,15 @@
-import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { sessionsApi } from "@/services/sessions";
+import { useGetTranscript, useGetSession } from "@/useCases/sessions";
 import { ArrowLeft, Download } from "lucide-react";
-import type { TranscriptTurn } from "@/types";
 
 export default function TranscriptPage() {
   const { id, sessionId } = useParams<{ id: string; sessionId: string }>();
-  const [turns, setTurns] = useState<TranscriptTurn[]>([]);
-  const [candidateName, setCandidateName] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    Promise.all([sessionsApi.getTranscript(Number(sessionId)), sessionsApi.get(Number(sessionId))])
-      .then(([tRes, sRes]) => {
-        setTurns(tRes.data.turns);
-        setCandidateName(sRes.data.session.candidate_name ?? null);
-      })
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [sessionId]);
+  const { data: tData, isPending, isError } = useGetTranscript(Number(sessionId));
+  const { data: sData } = useGetSession(Number(sessionId));
+  const turns = tData?.turns ?? [];
+  const candidateName = sData?.session.candidate_name ?? null;
 
   const handleDownload = () => {
     const lines = turns.map((t) => {
@@ -52,7 +40,7 @@ export default function TranscriptPage() {
             {candidateName && <p className="text-sm text-muted-foreground">{candidateName}</p>}
           </div>
         </div>
-        {!loading && !error && turns.length > 0 && (
+        {!isPending && !isError && turns.length > 0 && (
           <Button variant="outline" size="sm" onClick={handleDownload}>
             <Download className="h-3.5 w-3.5 mr-1.5" />
             Download .txt
@@ -60,7 +48,7 @@ export default function TranscriptPage() {
         )}
       </div>
 
-      {loading && (
+      {isPending && (
         <div className="space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-16 w-full" />
@@ -68,19 +56,19 @@ export default function TranscriptPage() {
         </div>
       )}
 
-      {!loading && error && (
+      {!isPending && isError && (
         <div className="border rounded-lg p-6 text-center text-sm text-destructive">
           Failed to load transcript. Please refresh.
         </div>
       )}
 
-      {!loading && !error && turns.length === 0 && (
+      {!isPending && !isError && turns.length === 0 && (
         <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
           No transcript available for this session.
         </div>
       )}
 
-      {!loading && !error && turns.length > 0 && (
+      {!isPending && !isError && turns.length > 0 && (
         <div className="space-y-3">
           {turns.map((turn) => {
             const isAI = turn.speaker === "ai";

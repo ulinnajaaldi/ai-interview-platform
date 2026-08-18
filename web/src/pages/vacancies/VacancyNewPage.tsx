@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import LevelRadio from "@/components/assessment/LevelRadio";
 import SkillPicker from "@/components/assessment/SkillPicker";
-import { vacanciesApi } from "@/services/vacancies";
+import { useCreateVacancy } from "@/useCases/vacancies";
 import { ArrowLeft, Plus, X, Loader2 } from "lucide-react";
 import type { VacancySkill } from "@/types";
 
@@ -21,9 +21,13 @@ interface VacancyFormValues {
 
 export default function VacancyNewPage() {
   const navigate = useNavigate();
-  const [submitting, setSubmitting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const createVacancy = useCreateVacancy({
+    onSuccess: () => navigate("/vacancies"),
+    onError: (e) => setError(e?.message ?? "Failed to save vacancy."),
+  });
 
   const {
     register,
@@ -43,22 +47,13 @@ export default function VacancyNewPage() {
 
   const { fields, append, remove } = useFieldArray({ control, name: "skills" });
 
-  const onSubmit = async (data: VacancyFormValues) => {
-    setError(null);
-    setSubmitting(true);
-    try {
-      await vacanciesApi.create({
-        role_title: data.role_title,
-        culture_dimensions: data.culture_dimensions,
-        competency_expectations: data.competency_expectations,
-        vacancy_skills_attributes: data.skills,
-      });
-      navigate("/vacancies");
-    } catch (e: any) {
-      setError(e?.response?.data?.errors?.[0]?.message ?? "Failed to save vacancy.");
-    } finally {
-      setSubmitting(false);
-    }
+  const onSubmit = (data: VacancyFormValues) => {
+    createVacancy.mutate({
+      role_title: data.role_title,
+      culture_dimensions: data.culture_dimensions,
+      competency_expectations: data.competency_expectations,
+      vacancy_skills_attributes: data.skills,
+    });
   };
 
   return (
@@ -157,8 +152,8 @@ export default function VacancyNewPage() {
           <Button type="button" variant="outline" onClick={() => navigate("/vacancies")}>
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          <Button type="submit" disabled={createVacancy.isPending}>
+            {createVacancy.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Save Vacancy
           </Button>
         </div>

@@ -30,7 +30,7 @@ import { Separator } from "@/components/ui/separator";
 import SkillCard from "@/components/assessment/SkillCard";
 import SkillPicker from "@/components/assessment/SkillPicker";
 import { ArrowLeft, Plus, Loader2 } from "lucide-react";
-import { assessmentsApi } from "@/services/assessments";
+import { useCreateAssessment } from "@/useCases/assessments";
 import { TIME_LIMIT_OPTIONS } from "@/utils/constants";
 import type { AssessmentSkill } from "@/types";
 
@@ -43,9 +43,13 @@ export interface AssessmentFormValues {
 
 export default function AssessmentNewPage() {
   const navigate = useNavigate();
-  const [submitting, setSubmitting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const createAssessment = useCreateAssessment({
+    onSuccess: (data) => navigate(`/assessments/${data.assessment.id}/invite`),
+    onError: (e) => setError(e?.message ?? "Failed to save assessment."),
+  });
 
   const form = useForm<AssessmentFormValues>({
     defaultValues: {
@@ -93,30 +97,22 @@ export default function AssessmentNewPage() {
     append({ ...skill, display_order: fields.length });
   };
 
-  const onSubmit = async (data: AssessmentFormValues) => {
+  const onSubmit = (data: AssessmentFormValues) => {
     if (data.skills.length === 0) {
       setError("Add at least one skill to continue.");
       return;
     }
     setError(null);
-    setSubmitting(true);
-    try {
-      const payload = {
-        name: data.name,
-        time_limit_min: data.time_limit_min,
-        language: data.language,
-        assessment_skills_attributes: data.skills.map((s, i) => ({
-          ...s,
-          display_order: i,
-        })),
-      };
-      const res = await assessmentsApi.create(payload);
-      navigate(`/assessments/${res.data.assessment.id}/invite`);
-    } catch (e: any) {
-      setError(e?.response?.data?.errors?.[0]?.message ?? "Failed to save assessment.");
-    } finally {
-      setSubmitting(false);
-    }
+    const payload = {
+      name: data.name,
+      time_limit_min: data.time_limit_min,
+      language: data.language,
+      assessment_skills_attributes: data.skills.map((s, i) => ({
+        ...s,
+        display_order: i,
+      })),
+    };
+    createAssessment.mutate(payload);
   };
 
   return (
@@ -235,8 +231,8 @@ export default function AssessmentNewPage() {
           <Button type="button" variant="outline" onClick={() => navigate("/assessments")}>
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          <Button type="submit" disabled={createAssessment.isPending}>
+            {createAssessment.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Save &amp; Create Session →
           </Button>
         </div>

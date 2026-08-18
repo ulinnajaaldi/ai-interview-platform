@@ -30,7 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import SkillCard from "@/components/assessment/SkillCard";
 import SkillPicker from "@/components/assessment/SkillPicker";
 import { ArrowLeft, Plus, Loader2 } from "lucide-react";
-import { assessmentsApi } from "@/services/assessments";
+import { useGetAssessment, useUpdateAssessment } from "@/useCases/assessments";
 import { TIME_LIMIT_OPTIONS } from "@/utils/constants";
 import type { AssessmentSkill } from "@/types";
 import type { AssessmentFormValues } from "./AssessmentNewPage";
@@ -38,10 +38,14 @@ import type { AssessmentFormValues } from "./AssessmentNewPage";
 export default function AssessmentEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const { data, isPending } = useGetAssessment(Number(id));
+  const updateAssessment = useUpdateAssessment({
+    onSuccess: () => navigate(`/assessments/${id}/invite`),
+    onError: (e) => setError(e?.message ?? "Failed to save."),
+  });
 
   const form = useForm<AssessmentFormValues>({
     defaultValues: { name: "", time_limit_min: 45, skills: [] },
@@ -58,15 +62,11 @@ export default function AssessmentEditPage() {
   const { fields, append, remove, move } = useFieldArray({ control, name: "skills" });
 
   useEffect(() => {
-    assessmentsApi
-      .get(Number(id))
-      .then((res) => {
-        const a = res.data.assessment;
-        reset({ name: a.name, time_limit_min: a.time_limit_min, skills: a.skills });
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id, reset]);
+    if (data?.assessment) {
+      const a = data.assessment;
+      reset({ name: a.name, time_limit_min: a.time_limit_min, skills: a.skills });
+    }
+  }, [data, reset]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -82,28 +82,23 @@ export default function AssessmentEditPage() {
     }
   };
 
-  const onSubmit = async (data: AssessmentFormValues) => {
+  const onSubmit = (data: AssessmentFormValues) => {
     if (data.skills.length === 0) {
       setError("Add at least one skill.");
       return;
     }
     setError(null);
-    setSubmitting(true);
-    try {
-      await assessmentsApi.update(Number(id), {
+    updateAssessment.mutate({
+      id: Number(id),
+      data: {
         name: data.name,
         time_limit_min: data.time_limit_min,
         assessment_skills_attributes: data.skills.map((s, i) => ({ ...s, display_order: i })),
-      });
-      navigate(`/assessments/${id}/invite`);
-    } catch (e: any) {
-      setError(e?.response?.data?.errors?.[0]?.message ?? "Failed to save.");
-    } finally {
-      setSubmitting(false);
-    }
+      },
+    });
   };
 
-  if (loading) {
+  if (isPending) {
     return (
       <div className="max-w-2xl mx-auto space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -219,8 +214,8 @@ export default function AssessmentEditPage() {
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+          <Button type="submit" disabled={updateAssessment.isPending}>
+            {updateAssessment.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Save Changes
           </Button>
         </div>

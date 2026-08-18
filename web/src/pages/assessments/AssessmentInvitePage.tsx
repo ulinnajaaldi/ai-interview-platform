@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { assessmentsApi } from "@/services/assessments";
+import { useGetAssessment, useGetAssessmentSessions, useCreateSession } from "@/useCases/assessments";
 import { LEVEL_LABELS } from "@/utils/constants";
 import { usePolling } from "@/hooks/usePolling";
 import {
@@ -163,67 +163,50 @@ function SessionRow({
 export default function AssessmentInvitePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [assessment, setAssessment] = useState<Assessment | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [creatingSession, setCreatingSession] = useState(false);
   const [newSession, setNewSession] = useState<Session | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [newSessionCopied, setNewSessionCopied] = useState(false);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [candidateNameInput, setCandidateNameInput] = useState("");
 
-  const loadSessions = useCallback(async () => {
-    const res = await assessmentsApi.getSessions(Number(id));
-    setSessions(res.data.sessions);
-  }, [id]);
+  const { data: assessmentData, isPending: assessmentLoading } = useGetAssessment(Number(id));
+  const {
+    data: sessionsData,
+    isPending: sessionsLoading,
+    refetch: refetchSessions,
+  } = useGetAssessmentSessions(Number(id));
 
-  useEffect(() => {
-    Promise.all([assessmentsApi.get(Number(id)), assessmentsApi.getSessions(Number(id))])
-      .then(([aRes, sRes]) => {
-        setAssessment(aRes.data.assessment);
-        setSessions(sRes.data.sessions);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id]);
+  const assessment = assessmentData?.assessment;
+  const sessions = sessionsData?.sessions ?? [];
+  const loading = assessmentLoading || sessionsLoading;
+
+  const createSession = useCreateSession({
+    onSuccess: (data) => {
+      setNewSession(data.session);
+      refetchSessions();
+    },
+  });
 
   // Poll while any session is live or pending so status changes surface automatically
   const hasLiveOrPending = sessions.some((s) => s.status !== "ended");
-  usePolling(loadSessions, 5000, hasLiveOrPending);
+  usePolling(() => void refetchSessions(), 5000, hasLiveOrPending);
 
   const openInviteDialog = () => {
     setCandidateNameInput("");
     setShowInviteDialog(true);
   };
 
-  const handleInviteCandidate = async () => {
-    setCreatingSession(true);
+  const handleInviteCandidate = () => {
     setShowInviteDialog(false);
     setNewSession(null);
-    try {
-      const res = await assessmentsApi.createSession(
-        Number(id),
-        candidateNameInput.trim() || undefined
-      );
-      const created = res.data.session;
-      setNewSession(created);
-      setSessions((prev) => [created, ...prev]);
-    } finally {
-      setCreatingSession(false);
-    }
+    createSession.mutate({
+      assessmentId: Number(id),
+      candidateName: candidateNameInput.trim() || undefined,
+    });
   };
 
-  const handleReschedule = async (session: Session) => {
-    setCreatingSession(true);
-    try {
-      const res = await assessmentsApi.createSession(Number(id), session.candidate_name);
-      const created = res.data.session;
-      setNewSession(created);
-      setSessions((prev) => [created, ...prev]);
-    } finally {
-      setCreatingSession(false);
-    }
+  const handleReschedule = (session: Session) => {
+    createSession.mutate({ assessmentId: Number(id), candidateName: session.candidate_name });
   };
 
   const copyLink = (session: Session, id: number) => {
@@ -270,9 +253,9 @@ export default function AssessmentInvitePage() {
           <Button variant="outline" size="sm" onClick={() => navigate(`/assessments/${id}/edit`)}>
             <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
           </Button>
-          <Button size="sm" onClick={openInviteDialog} disabled={creatingSession}>
+          <Button size="sm" onClick={openInviteDialog} disabled={createSession.isPending}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
-            {creatingSession ? "Creating..." : "Invite Candidate"}
+            {createSession.isPending ? "Creating..." : "Invite Candidate"}
           </Button>
         </div>
       </div>
@@ -378,7 +361,7 @@ export default function AssessmentInvitePage() {
                   }}
                   onReschedule={handleReschedule}
                   copiedId={copiedId}
-                  rescheduling={creatingSession}
+                  rescheduling={createSession.isPending}
                 />
               ))}
             </CardContent>

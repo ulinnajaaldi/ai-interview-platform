@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import LevelRadio from "@/components/assessment/LevelRadio";
 import SkillPicker from "@/components/assessment/SkillPicker";
-import { vacanciesApi } from "@/services/vacancies";
+import { useGetVacancy, useUpdateVacancy } from "@/useCases/vacancies";
 import { ArrowLeft, Plus, X, Loader2 } from "lucide-react";
 import type { VacancySkill } from "@/types";
 
@@ -23,9 +23,12 @@ interface VacancyFormValues {
 export default function VacancyEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  const { data, isPending } = useGetVacancy(Number(id));
+  const updateVacancy = useUpdateVacancy({
+    onSuccess: () => navigate("/vacancies"),
+  });
 
   const { register, handleSubmit, control, setValue, watch, reset } = useForm<VacancyFormValues>({
     defaultValues: {
@@ -38,37 +41,30 @@ export default function VacancyEditPage() {
   const { fields, append, remove } = useFieldArray({ control, name: "skills" });
 
   useEffect(() => {
-    vacanciesApi
-      .get(Number(id))
-      .then((res) => {
-        const v = res.data.vacancy;
-        reset({
-          role_title: v.role_title,
-          culture_dimensions: v.culture_dimensions,
-          competency_expectations: v.competency_expectations,
-          skills: v.skills,
-        });
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [id, reset]);
-
-  const onSubmit = async (data: VacancyFormValues) => {
-    setSubmitting(true);
-    try {
-      await vacanciesApi.update(Number(id), {
-        role_title: data.role_title,
-        culture_dimensions: data.culture_dimensions,
-        competency_expectations: data.competency_expectations,
-        vacancy_skills_attributes: data.skills,
+    if (data?.vacancy) {
+      const v = data.vacancy;
+      reset({
+        role_title: v.role_title,
+        culture_dimensions: v.culture_dimensions,
+        competency_expectations: v.competency_expectations,
+        skills: v.skills,
       });
-      navigate("/vacancies");
-    } finally {
-      setSubmitting(false);
     }
+  }, [data, reset]);
+
+  const onSubmit = (formData: VacancyFormValues) => {
+    updateVacancy.mutate({
+      id: Number(id),
+      data: {
+        role_title: formData.role_title,
+        culture_dimensions: formData.culture_dimensions,
+        competency_expectations: formData.competency_expectations,
+        vacancy_skills_attributes: formData.skills,
+      },
+    });
   };
 
-  if (loading)
+  if (isPending)
     return (
       <div className="max-w-2xl mx-auto space-y-4">
         <Skeleton className="h-8 w-48" />
@@ -130,8 +126,8 @@ export default function VacancyEditPage() {
           <Button type="button" variant="outline" onClick={() => navigate("/vacancies")}>
             Cancel
           </Button>
-          <Button type="submit" disabled={submitting}>
-            {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Changes
+          <Button type="submit" disabled={updateVacancy.isPending}>
+            {updateVacancy.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Changes
           </Button>
         </div>
       </form>
