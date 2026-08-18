@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -11,62 +11,60 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import SkillPortfolioCard from "@/components/portfolio/SkillPortfolioCard";
-import { sessionsApi } from "@/services/sessions";
-import { vacanciesApi } from "@/services/vacancies";
 import { portfoliosApi } from "@/services/portfolios";
+import {
+  useGetPortfolio,
+  useGetSession,
+  useMarkPortfolioReviewed,
+  useRegeneratePortfolio,
+} from "@/useCases/sessions";
+import { useGetVacancies } from "@/useCases/vacancies";
 import { usePolling } from "@/hooks/usePolling";
 import { ArrowLeft, Download, Loader2, RefreshCw, Zap, FileText } from "lucide-react";
-import type { Portfolio, AssessorOverride, Vacancy } from "@/types";
+import type { Portfolio, AssessorOverride } from "@/types";
 
 export default function PortfolioPage() {
   const { id, sessionId } = useParams<{ id: string; sessionId: string }>();
   const navigate = useNavigate();
-  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
-  const reviewed = !!portfolio?.reviewed_at;
-  const [generating, setGenerating] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [overrides, setOverrides] = useState<Record<number, AssessorOverride>>({});
-  const [vacancies, setVacancies] = useState<Vacancy[]>([]);
   const [selectedVacancy, setSelectedVacancy] = useState<string>("");
   const [exporting, setExporting] = useState<"pdf" | "json" | null>(null);
-  const [candidateName, setCandidateName] = useState<string | null>(null);
 
-  const fetchPortfolio = useCallback(async () => {
-    const res = await sessionsApi.getPortfolio(Number(sessionId));
-    const data = res.data as any;
-    if (
-      data.status === "generating" ||
-      data.portfolio?.generation_status === "generating" ||
-      data.portfolio?.generation_status === "pending"
-    ) {
-      setGenerating(true);
-    } else if (data.portfolio) {
-      setPortfolio(data.portfolio);
-      setGenerating(false);
-      // Build overrides map
-      const overrideMap: Record<number, AssessorOverride> = {};
-      data.portfolio.overrides.forEach((o: AssessorOverride) => {
-        overrideMap[o.portfolio_skill_id] = o;
-      });
-      setOverrides(overrideMap);
-    }
-  }, [sessionId]);
+  const {
+    data: portfolioData,
+    isPending: portfolioLoading,
+    refetch: refetchPortfolio,
+  } = useGetPortfolio(Number(sessionId));
+  const { data: sessionData } = useGetSession(Number(sessionId));
+  const { data: vacanciesData } = useGetVacancies();
+  const markReviewed = useMarkPortfolioReviewed();
+  const regeneratePortfolio = useRegeneratePortfolio();
 
-  useEffect(() => {
-    Promise.all([fetchPortfolio(), vacanciesApi.list(), sessionsApi.get(Number(sessionId))])
-      .then(([, vRes, sRes]) => {
-        setVacancies(vRes.data.vacancies);
-        setCandidateName(sRes.data.session.candidate_name ?? null);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [fetchPortfolio, sessionId]);
+  // Derive state from query data
+  const portfolioResult = portfolioData as any;
+  const generating =
+    portfolioResult?.status === "generating" ||
+    portfolioResult?.portfolio?.generation_status === "generating" ||
+    portfolioResult?.portfolio?.generation_status === "pending";
+  const portfolio: Portfolio | null = portfolioResult?.portfolio ?? null;
+  const reviewed = !!portfolio?.reviewed_at;
+  const vacancies = vacanciesData?.vacancies ?? [];
+  const candidateName = sessionData?.session?.candidate_name ?? null;
+  const loading = portfolioLoading;
 
   // Poll while generating
-  usePolling(fetchPortfolio, 5000, generating);
+  usePolling(() => {
+    refetchPortfolio();
+  }, 5000, generating);
 
-  const handleOverrideSaved = (skillId: number, override: AssessorOverride) => {
-    setOverrides((prev) => ({ ...prev, [skillId]: override }));
+  const overrides = portfolio
+    ? portfolio.overrides.reduce<Record<number, AssessorOverride>>((map, o) => {
+        map[o.portfolio_skill_id] = o;
+        return map;
+      }, {})
+    : {};
+
+  const handleOverrideSaved = (_skillId: number, _override: AssessorOverride) => {
+    refetchPortfolio();
   };
 
   const handleRunFitGap = () => {
@@ -193,10 +191,7 @@ export default function PortfolioPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={async () => {
-              await sessionsApi.regeneratePortfolio(Number(sessionId));
-              setGenerating(true);
-            }}
+            onClick={() => regeneratePortfolio.mutate(Number(sessionId))}
           >
             <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Retry
           </Button>
@@ -265,12 +260,8 @@ export default function PortfolioPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={async () => {
-                  await sessionsApi.markPortfolioReviewed(Number(sessionId));
-                  setPortfolio((prev) =>
-                    prev ? { ...prev, reviewed_at: new Date().toISOString() } : prev
-                  );
-                }}
+                onClick={() => markReviewed.mutate(Number(sessionId))}
+                disabled={markReviewed.isPending}
               >
                 Mark Reviewed
               </Button>

@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import TranscriptBubble from "@/components/interview/TranscriptBubble";
 import { useCoverageWebSocket } from "@/hooks/useCoverageWebSocket";
 import { sessionsApi } from "@/services/sessions";
+import { useGetSession, useGetTranscript, useEndSession } from "@/useCases/sessions";
 import {
   COVERAGE_STATE_LABELS,
   COVERAGE_STATE_WIDTH,
@@ -52,11 +53,7 @@ function ElapsedTimer({ startedAt }: { startedAt: string }) {
 export default function LiveMonitorPage() {
   const { id, sessionId } = useParams<{ id: string; sessionId: string }>();
   const navigate = useNavigate();
-  const [startedAt, setStartedAt] = useState<string | null>(null);
-  const [assessmentName, setAssessmentName] = useState<string>("");
   const [transcript, setTranscript] = useState<TranscriptTurn[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState(false);
   const [sessionActive, setSessionActive] = useState(true);
   const [candidateOnline, setCandidateOnline] = useState<boolean | null>(null);
@@ -68,6 +65,22 @@ export default function LiveMonitorPage() {
     Number(sessionId)
   );
 
+  const { data: sessionData, isPending: sessionLoading } = useGetSession(Number(sessionId));
+  const { data: transcriptData, isPending: transcriptLoading } = useGetTranscript(
+    Number(sessionId)
+  );
+
+  const session = sessionData?.session as any;
+  const assessmentName = session?.assessment?.name ?? "";
+  const startedAt = session?.started_at ?? null;
+
+  const endSession = useEndSession({
+    onSuccess: () => navigate(`/assessments/${id}/sessions/${sessionId}/portfolio`),
+    onError: () => setEndError(true),
+  });
+
+  const loading = sessionLoading || transcriptLoading;
+
   // On session_ended from WS — stop polling, update local state
   useEffect(() => {
     if (sessionEnded) {
@@ -76,25 +89,26 @@ export default function LiveMonitorPage() {
     }
   }, [sessionEnded]);
 
-  // Initial load
+  // Seed transcript + lastTurn from the query; real-time appends come from the poll below
   useEffect(() => {
-    Promise.all([sessionsApi.get(Number(sessionId)), sessionsApi.getTranscript(Number(sessionId))])
-      .then(([sRes, tRes]) => {
-        const s = sRes.data.session as any;
-        setStartedAt(s.started_at ?? null);
-        setAssessmentName(s.assessment?.name ?? "");
-        setCandidateOnline(s.candidate_online ?? null);
-        setCandidateLastSeen(s.candidate_last_seen_at ?? null);
-        if (s.status !== "active") setSessionActive(false);
+    const turns = transcriptData?.turns ?? [];
+    setTranscript(turns.slice(-10));
+    if (turns.length > 0) {
+      lastTurnRef.current = turns[turns.length - 1].turn_number;
+    }
+  }, [transcriptData]);
 
-        const turns = tRes.data.turns;
-        setTranscript(turns.slice(-10));
-        if (turns.length > 0) {
-          lastTurnRef.current = turns[turns.length - 1].turn_number;
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [sessionId]);
+  // Seed candidate presence from the query; refreshed by the poll below
+  useEffect(() => {
+    if (!session) return;
+    setCandidateOnline(session.candidate_online ?? null);
+    setCandidateLastSeen(session.candidate_last_seen_at ?? null);
+  }, [session]);
+
+  // Set sessionActive based on session data
+  useEffect(() => {
+    if (session && session.status !== "active") setSessionActive(false);
+  }, [session]);
 
   // Poll transcript every 3s while session is active
   const fetchNewTurns = useCallback(async () => {
@@ -134,15 +148,8 @@ export default function LiveMonitorPage() {
     return () => clearInterval(id);
   }, [sessionActive, loading, sessionId]);
 
-  const handleEndSession = async () => {
-    setEnding(true);
-    try {
-      await sessionsApi.endSession(Number(sessionId));
-      navigate(`/assessments/${id}/sessions/${sessionId}/portfolio`);
-    } catch {
-      setEnding(false);
-      setEndError(true);
-    }
+  const handleEndSession = () => {
+    endSession.mutate({ id: Number(sessionId) });
   };
 
   if (loading) {
@@ -336,8 +343,8 @@ export default function LiveMonitorPage() {
         {sessionActive ? (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={ending}>
-                {ending ? "Ending..." : "End Session"}
+              <Button variant="destructive" disabled={endSession.isPending}>
+                {endSession.isPending ? "Ending..." : "End Session"}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>

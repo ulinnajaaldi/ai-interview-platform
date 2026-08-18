@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,10 +6,11 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import ComparisonTable from "@/components/fitgap/ComparisonTable";
 import { portfoliosApi } from "@/services/portfolios";
-import { sessionsApi } from "@/services/sessions";
 import { usePolling } from "@/hooks/usePolling";
+import { useGetPortfolio } from "@/useCases/sessions";
+import { useGetFitGap, useTriggerFitGap, useExportPortfolio } from "@/useCases/portfolios";
 import { ArrowLeft, Download, Loader2, RefreshCw, Zap } from "lucide-react";
-import type { FitGapReport, Portfolio } from "@/types";
+import type { Portfolio } from "@/types";
 
 export default function FitGapReportPage() {
   const { id, sessionId, vacancyId } = useParams<{
@@ -18,83 +19,71 @@ export default function FitGapReportPage() {
     vacancyId: string;
   }>();
 
-  const [report, setReport] = useState<FitGapReport | null>(null);
-  const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState<"pdf" | "json" | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "json" | null>(null);
+  const [generationTriggered, setGenerationTriggered] = useState(false);
 
-  const fetchReport = useCallback(async () => {
-    if (!portfolio) return;
-    try {
-      const res = await portfoliosApi.getFitGap(portfolio.id, Number(vacancyId));
-      setReport(res.data.report);
-      setGenerating(false);
-    } catch (e: any) {
-      if (e?.response?.status === 404) {
-        if (!generating) {
-          try {
-            await portfoliosApi.triggerFitGap(portfolio.id, Number(vacancyId));
-          } catch {
-            setGenerating(false);
-            return;
-          }
-        }
-        setGenerating(true);
-      }
-    }
-  }, [portfolio, vacancyId, generating]);
+  const { data: portfolioData, isPending: portfolioLoading } = useGetPortfolio(Number(sessionId));
+  const portfolio: Portfolio | null = (portfolioData as any)?.portfolio ?? null;
 
-  useEffect(() => {
-    sessionsApi
-      .getPortfolio(Number(sessionId))
-      .then(async (res) => {
-        const data = res.data as any;
-        if (data.portfolio) {
-          setPortfolio(data.portfolio);
-        }
-      })
-      .finally(() => setLoading(false));
-  }, [sessionId]);
+  const {
+    data: fitGapData,
+    isPending: fitGapLoading,
+    refetch: refetchFitGap,
+    error: fitGapError,
+  } = useGetFitGap(portfolio?.id ?? 0, Number(vacancyId), { enabled: !!portfolio?.id });
+
+  const report = regenerating ? null : fitGapData?.report ?? null;
+
+  const triggerFitGap = useTriggerFitGap({ onSuccess: () => refetchFitGap() });
+  const exportPortfolio = useExportPortfolio();
+
+  const loading = portfolioLoading || (portfolio && fitGapLoading);
+  const generating = !report && !!portfolio;
 
   useEffect(() => {
-    if (portfolio) fetchReport();
-  }, [portfolio, fetchReport]);
+    if (!portfolio || !fitGapError || generationTriggered) return;
+    if ((fitGapError as any)?.response?.status !== 404) return;
+    setGenerationTriggered(true);
+    triggerFitGap.mutate({ portfolioId: portfolio.id, vacancyId: Number(vacancyId) });
+  }, [portfolio, fitGapError, generationTriggered, triggerFitGap, vacancyId]);
 
-  usePolling(fetchReport, 5000, generating && !!portfolio);
+  usePolling(() => {
+    void refetchFitGap();
+  }, 5000, !report && !!portfolio);
 
   const handleRegenerate = async () => {
     if (!portfolio) return;
     setRegenerating(true);
     try {
       await portfoliosApi.regenerateFitGap(portfolio.id, Number(vacancyId));
-      setReport(null);
-      setGenerating(true);
+      await refetchFitGap();
     } finally {
       setRegenerating(false);
     }
   };
 
-  const handleExport = async (format: "pdf" | "json") => {
+  const handleExport = (format: "pdf" | "json") => {
     if (!portfolio) return;
     setExporting(format);
-    try {
-      const res = await portfoliosApi.exportPortfolio(portfolio.id, format, Number(vacancyId));
-      const ext = format;
-      const blob =
-        format === "pdf"
-          ? new Blob([res.data as BlobPart], { type: "application/pdf" })
-          : new Blob([JSON.stringify(res.data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `fitgap-${sessionId}-${vacancyId}.${ext}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } finally {
-      setExporting(null);
-    }
+    exportPortfolio.mutate(
+      { portfolioId: portfolio.id, format, vacancyId: Number(vacancyId) },
+      {
+        onSettled: () => setExporting(null),
+        onSuccess: (data) => {
+          const blob =
+            format === "pdf"
+              ? new Blob([data as BlobPart], { type: "application/pdf" })
+              : new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `fitgap-${sessionId}-${vacancyId}.${format}`;
+          a.click();
+          URL.revokeObjectURL(url);
+        },
+      }
+    );
   };
 
   if (loading) {
