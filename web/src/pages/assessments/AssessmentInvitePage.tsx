@@ -15,7 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { assessmentsApi } from "@/services/assessments";
 import { LEVEL_LABELS } from "@/utils/constants";
-import { ArrowLeft, Copy, Check, Eye, Pencil, Clock, Plus, UserRound } from "lucide-react";
+import { usePolling } from "@/hooks/usePolling";
+import { ArrowLeft, Copy, Check, Eye, Pencil, Clock, Plus, UserRound, RotateCcw } from "lucide-react";
 import type { Assessment, Session } from "@/types";
 
 function SessionRow({
@@ -23,13 +24,17 @@ function SessionRow({
   index,
   assessmentId,
   onCopy,
+  onReschedule,
   copiedId,
+  rescheduling,
 }: {
   session: Session;
   index: number;
   assessmentId: string;
   onCopy: (id: number) => void;
+  onReschedule: (session: Session) => void;
   copiedId: number | null;
+  rescheduling: boolean;
 }) {
   const navigate = useNavigate();
   const isLive = session.status === "active";
@@ -120,6 +125,17 @@ function SessionRow({
               Results
             </Button>
           )}
+          {isEnded && (session.end_reason === "error" || session.end_reason === "abandoned") && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => onReschedule(session)}
+              disabled={rescheduling}
+            >
+              <RotateCcw className="h-3 w-3 mr-1" /> Reschedule
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -154,13 +170,9 @@ export default function AssessmentInvitePage() {
     }).catch(() => {}).finally(() => setLoading(false));
   }, [id]);
 
-  // Poll while any session is live or pending
-  useEffect(() => {
-    const hasActive = sessions.some((s) => s.status !== "ended");
-    if (!hasActive) return;
-    const interval = setInterval(loadSessions, 5000);
-    return () => clearInterval(interval);
-  }, [sessions, loadSessions]);
+  // Poll while any session is live or pending so status changes surface automatically
+  const hasLiveOrPending = sessions.some((s) => s.status !== "ended");
+  usePolling(loadSessions, 5000, hasLiveOrPending);
 
   const openInviteDialog = () => {
     setCandidateNameInput("");
@@ -173,6 +185,18 @@ export default function AssessmentInvitePage() {
     setNewSession(null);
     try {
       const res = await assessmentsApi.createSession(Number(id), candidateNameInput.trim() || undefined);
+      const created = res.data.session;
+      setNewSession(created);
+      setSessions((prev) => [created, ...prev]);
+    } finally {
+      setCreatingSession(false);
+    }
+  };
+
+  const handleReschedule = async (session: Session) => {
+    setCreatingSession(true);
+    try {
+      const res = await assessmentsApi.createSession(Number(id), session.candidate_name);
       const created = res.data.session;
       setNewSession(created);
       setSessions((prev) => [created, ...prev]);
@@ -318,7 +342,9 @@ export default function AssessmentInvitePage() {
                     const s = sessions.find((x) => x.id === sid);
                     if (s) copyLink(s, sid);
                   }}
+                  onReschedule={handleReschedule}
                   copiedId={copiedId}
+                  rescheduling={creatingSession}
                 />
               ))}
             </CardContent>

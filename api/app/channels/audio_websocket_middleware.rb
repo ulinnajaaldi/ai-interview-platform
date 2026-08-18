@@ -67,6 +67,7 @@ class AudioWebSocketMiddleware
     # Candidate is here — record presence so the assessor can see when the candidate
     # left and when they came back (browser close marks them offline).
     session.update_columns(candidate_online: true, candidate_last_seen_at: Time.current)
+    publish_presence(session, true)
     connect_to_gemini(browser_ws, state)
   rescue StandardError => e
     Rails.logger.error("[AudioWS] Exception in on:open: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
@@ -104,6 +105,7 @@ class AudioWebSocketMiddleware
   def handle_browser_close(event, browser_ws, state, session_id)
     Rails.logger.info("[AudioWS] Browser disconnected: session=#{session_id} code=#{event.code}")
     state.session&.update_columns(candidate_online: false, candidate_last_seen_at: Time.current)
+    publish_presence(state.session, false) if state.session
     state.browser_disconnected_at = Time.current
     state.proactive_reconnect_timer&.cancel
     abort_pending_proactive_reconnect(state)
@@ -123,6 +125,20 @@ class AudioWebSocketMiddleware
     state.retiring_gemini_client = nil
     pending.supersede!
     pending.close
+  end
+
+  def publish_presence(session, online)
+    Thread.new do
+      redis = ::Redis.new(url: ENV.fetch('REDIS_URL', 'redis://localhost:6379/1'))
+      redis.publish(
+        "assessment:#{session.assessment_id}",
+        { type: 'presence', session_id: session.id, candidate_online: online }.to_json
+      )
+    rescue => e
+      Rails.logger.debug("[AudioWS] presence publish failed: #{e.message}")
+    ensure
+      redis&.close
+    end
   end
 
   def connect_to_gemini(browser_ws, state)
