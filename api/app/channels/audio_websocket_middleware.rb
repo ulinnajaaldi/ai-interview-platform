@@ -17,12 +17,11 @@ class AudioWebSocketMiddleware
 
   SYSTEM_SIGNAL_TOKEN = 'SYS-TC-7x9k'
 
-  # Primary model is the configured one; the rest are self-healing fallbacks in case Gemini
-  # rejects the configured model on the Live endpoint (1008 model-not-found).
+  # Canonical live model from ModelManifest; operational fallback kept outside manifest.
   GEMINI_LIVE_MODELS = [
-    ENV.fetch('GEMINI_LIVE_MODEL', 'gemini-3.1-flash-live-preview'),
+    Gemini::ModelManifest::MODELS[0],
     'gemini-3.5-live-translate-preview'
-  ].uniq.freeze
+  ].freeze
 
   WRAP_UP_SIGNAL = "[TIME CONTROL:#{SYSTEM_SIGNAL_TOKEN}] { \"wrap_up\": true, \"all_skills_covered\": true }" \
                    ' — Close the interview NOW. Do NOT ask any more questions.' \
