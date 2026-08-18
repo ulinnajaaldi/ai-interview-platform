@@ -165,6 +165,7 @@ export interface CandidateInfo {
   time_limit_min: number;
   session_status: string;
   end_reason?: string | null;
+  started_at?: string | null;
 }
 
 export interface PaginationMeta {

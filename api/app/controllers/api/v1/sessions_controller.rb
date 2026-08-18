@@ -3,8 +3,8 @@
 module Api
   module V1
     class SessionsController < ApiController
-      authorize_auth_token! :assessor, except: %i[candidate_info audio_complete]
-      skip_before_action :require_tenant!, only: %i[candidate_info audio_complete]
+      authorize_auth_token! :assessor, except: %i[candidate_info candidate_transcript audio_complete]
+      skip_before_action :require_tenant!, only: %i[candidate_info candidate_transcript audio_complete]
 
       before_action :set_session, only: %i[show end_session coverage transcript]
 
@@ -150,7 +150,32 @@ module Api
           role_title:      assessment.name,
           time_limit_min:  assessment.time_limit_min,
           session_status:  session.status,
-          end_reason:      session.end_reason
+          end_reason:      session.end_reason,
+          started_at:      session.started_at&.iso8601
+        )
+      end
+
+      # GET /sessions/:token/transcript  — invite-token auth, latest turns for the candidate
+      # so a page refresh restores the conversation history (the frontend otherwise keeps
+      # transcript only in React state and loses it on reload).
+      def candidate_transcript
+        session = Session.unscoped.find_by(invite_token: params[:token])
+
+        unless session
+          return json_error("Invalid or expired invite token", :not_found)
+        end
+
+        limit = [params[:limit].to_i.positive? ? params[:limit].to_i : 15, 50].min
+        turns = session.transcript_turns.ordered.last(limit)
+
+        json_response(
+          turns: turns.map do |t|
+            {
+              turn_number: t.turn_number,
+              speaker:     t.speaker,
+              text:        t.text
+            }
+          end
         )
       end
 

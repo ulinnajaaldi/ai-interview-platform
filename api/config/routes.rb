@@ -21,6 +21,12 @@ Rails.application.routes.draw do
         [200, { 'Content-Type' => 'application/octet-stream' }, [SecureRandom.random_bytes(1024 * 1024)]]
       }
 
+      # Candidate-facing (no JWT — invite token only).
+      # Must precede `resources :sessions` — the member GET :transcript/:coverage would steal these paths.
+      get  'sessions/:token/transcript',    to: 'sessions#candidate_transcript'
+      get  'sessions/:token/candidate',     to: 'sessions#candidate_info'
+      post 'sessions/:token/audio_complete', to: 'sessions#audio_complete'
+
       # Assessments
       resources :assessments do
         resources :sessions, only: %i[index create]
@@ -36,10 +42,6 @@ Rails.application.routes.draw do
           post 'portfolio/regenerate', to: 'portfolios#regenerate'
         end
       end
-
-      # Candidate-facing (no JWT — invite token only)
-      get  'sessions/:token/candidate',      to: 'sessions#candidate_info'
-      post 'sessions/:token/audio_complete', to: 'sessions#audio_complete'
 
       # Portfolio skills overrides
       resources :portfolio_skills, only: [] do

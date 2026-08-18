@@ -29,6 +29,12 @@ export const sessionsApi = {
   getCandidateInfo: (token: string) =>
     api.get<CandidateInfo>(`/sessions/${token}/candidate`),
 
+  getCandidateTranscript: (token: string, limit = 15) =>
+    api.get<{ turns: Pick<TranscriptTurn, "turn_number" | "speaker" | "text">[] }>(
+      `/sessions/${token}/transcript`,
+      { params: { limit } }
+    ),
+
   audioComplete: (token: string) =>
     api.post<{ ended: boolean; message: string }>(`/sessions/${token}/audio_complete`),
 };

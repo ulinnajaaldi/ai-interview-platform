@@ -40,6 +40,9 @@ export default function InterviewPage() {
   const connectionLostTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [micMuted, setMicMuted] = useState(false);
   const micMutedRef = useRef(false);
+  // Remaining interview seconds computed at load time for an already-started session —
+  // null when the session hasn't started yet (fresh start).
+  const [resumeRemainingSeconds, setResumeRemainingSeconds] = useState<number | null>(null);
 
   // Fetch candidate info
   useEffect(() => {
@@ -51,6 +54,23 @@ export default function InterviewPage() {
         if (res.data.session_status === "ended") {
           setEndedReason(res.data.end_reason ?? "error");
           setInterviewState("complete");
+        } else {
+          // Restore conversation history after a page refresh — the WS only pushes new turns.
+          sessionsApi.getCandidateTranscript(token).then((tRes) => {
+            setTranscript((prev) => (prev.length ? prev : tRes.data.turns
+              .map((t) => ({
+                speaker: t.speaker === "candidate" ? ("candidate" as const) : ("assessor" as const),
+                text: t.text,
+              }))
+              .slice(-10)));
+          });
+
+          // Preserve the time already spent so a reload doesn't reset the countdown.
+          if (res.data.session_status === "active" && res.data.started_at) {
+            const limit = res.data.time_limit_min * 60;
+            const elapsed = Math.max(0, Math.floor((Date.now() - new Date(res.data.started_at).getTime()) / 1000));
+            setResumeRemainingSeconds(Math.max(0, limit - elapsed));
+          }
         }
       })
       .catch(() => {
@@ -215,7 +235,7 @@ export default function InterviewPage() {
           )}
         </div>
 
-        {!hardwareCheckDone ? (
+        {resumeRemainingSeconds === null && !hardwareCheckDone ? (
           <div className="space-y-4">
             <div className="bg-muted/50 rounded-lg p-4 text-sm space-y-1.5 text-muted-foreground">
               <p>• This is a voice interview. Make sure you're in a quiet place.</p>
@@ -225,6 +245,24 @@ export default function InterviewPage() {
             </div>
             <HardwareCheck onStart={() => { setHardwareCheckDone(true); startInterview(); }} />
           </div>
+        ) : resumeRemainingSeconds !== null ? (
+          resumeRemainingSeconds > 0 ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5">
+                <span className="animate-pulse">●</span>
+                <span>
+                  You're mid-interview — resume where you left off.{" "}
+                  <strong>{Math.floor(resumeRemainingSeconds / 60)}:{String(resumeRemainingSeconds % 60).padStart(2, "0")}</strong> remaining.
+                </span>
+              </div>
+              <Button className="w-full" size="lg" onClick={startInterview}>
+                <Mic className="h-4 w-4 mr-2" />
+                Resume Interview
+              </Button>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">This interview session has reached its time limit.</p>
+          )
         ) : (
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5">
@@ -285,7 +323,7 @@ export default function InterviewPage() {
         <span className="text-sm font-medium">AI Interview</span>
         {candidateInfo && (
           <InterviewTimer
-            totalSeconds={candidateInfo.time_limit_min * 60}
+            totalSeconds={resumeRemainingSeconds ?? candidateInfo.time_limit_min * 60}
             running={interviewState === "active"}
             onExpired={endInterview}
           />
