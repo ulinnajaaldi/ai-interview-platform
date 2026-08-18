@@ -70,6 +70,9 @@ module Api
 
         result = Sessions::EndHandler.new(@session).call(reason: reason)
 
+        # Close the candidate's audio WebSocket so they see the session ended immediately.
+        AudioWebSocketMiddleware.close_session(@session.id)
+
         if result
           json_response(session: session_json(@session.reload))
         else

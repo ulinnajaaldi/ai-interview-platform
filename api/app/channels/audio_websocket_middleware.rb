@@ -1,11 +1,33 @@
 # frozen_string_literal: true
 
 require 'faye/websocket'
+require 'monitor'
 
 # Rack middleware that proxies a WebSocket at /ws/sessions/:id/audio between the browser (16kHz PCM)
 # and Gemini Live (24kHz PCM). Audio is buffered in a ring buffer for reconnection replay.
 class AudioWebSocketMiddleware
   AUDIO_PATH_PATTERN = %r{\A/ws/sessions/([^/]+)/audio\z}
+
+  # Thread-safe registry: session_id => browser_ws (one active candidate connection per session).
+  # Used by the controller to close the candidate's WebSocket when the assessor ends the session.
+  CONNECTIONS = {}
+  CONNECTIONS_MONITOR = Monitor.new
+
+  def self.close_session(session_id)
+    ws = nil
+    CONNECTIONS_MONITOR.synchronize { ws = CONNECTIONS.delete(session_id.to_i) }
+    return unless ws&.open?
+
+    # Must dispatch to the EventMachine reactor thread; send + delayed close
+    # matches the pattern used by close_session_after_end.
+    EM.schedule do
+      ws.send({ type: 'session_ended', reason: 'manual_assessor',
+                message: 'The interview has been ended by the assessor.' }.to_json)
+      EM.add_timer(0.3) { ws.close rescue nil }
+    end
+  rescue => e
+    Rails.logger.error("[AudioWS] close_session(#{session_id}) failed: #{e.class} #{e.message}")
+  end
 
   RECONNECT_BACKOFF = [1, 2, 4, 8, 15, 30, 30, 30].freeze
   MAX_RECONNECT_DURATION = 180        # seconds to keep retrying before giving up
@@ -68,6 +90,9 @@ class AudioWebSocketMiddleware
     # left and when they came back (browser close marks them offline).
     session.update_columns(candidate_online: true, candidate_last_seen_at: Time.current)
     publish_presence(session, true)
+    # Register in the connection registry so the controller can close this WS
+    # when the assessor ends the session remotely.
+    CONNECTIONS_MONITOR.synchronize { CONNECTIONS[session.id] = browser_ws }
     connect_to_gemini(browser_ws, state)
   rescue StandardError => e
     Rails.logger.error("[AudioWS] Exception in on:open: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
@@ -106,6 +131,8 @@ class AudioWebSocketMiddleware
     Rails.logger.info("[AudioWS] Browser disconnected: session=#{session_id} code=#{event.code}")
     state.session&.update_columns(candidate_online: false, candidate_last_seen_at: Time.current)
     publish_presence(state.session, false) if state.session
+    # Unregister from the connection registry.
+    CONNECTIONS_MONITOR.synchronize { CONNECTIONS.delete(state.session&.id) }
     state.browser_disconnected_at = Time.current
     state.proactive_reconnect_timer&.cancel
     abort_pending_proactive_reconnect(state)

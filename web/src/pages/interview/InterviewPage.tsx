@@ -19,6 +19,7 @@ import TranscriptBubble from "@/components/interview/TranscriptBubble";
 import { useAudioCapture } from "@/hooks/useAudioCapture";
 import { useAudioPlayback } from "@/hooks/useAudioPlayback";
 import { useAudioWebSocket } from "@/hooks/useAudioWebSocket";
+import { usePolling } from "@/hooks/usePolling";
 import { sessionsApi } from "@/services/sessions";
 import HardwareCheck from "@/components/HardwareCheck";
 import { CheckCircle, Mic, MicOff } from "lucide-react";
@@ -173,6 +174,20 @@ export default function InterviewPage() {
     },
   });
 
+  // Poll session status while active so the candidate sees immediately when the
+  // assessor ends the session remotely (audio WS may not deliver the signal).
+  const isActive = ["active", "reconnecting", "draining_audio"].includes(interviewState);
+  usePolling(async () => {
+    if (!token) return;
+    try {
+      const res = await sessionsApi.getCandidateInfo(token);
+      if (res.data.session_status === "ended") {
+        setEndedReason(res.data.end_reason ?? "manual_assessor");
+        setInterviewState("complete");
+      }
+    } catch { /* ignore — will retry next poll */ }
+  }, 10_000, isActive);
+
   const { start: startCapture, stop: stopCapture, mute, unmute } = useAudioCapture({
     onFrame: send,
   });
@@ -280,11 +295,24 @@ export default function InterviewPage() {
   }
 
   // ── State F: Complete ───────────────────────────────────────────────────
-  const SUCCESS_END_REASONS = ["all_covered", "manual_candidate", "manual_assessor", "time_ceiling"];
-  const isSuccessEnd = SUCCESS_END_REASONS.includes(endedReason ?? "");
+  const SUCCESS_END_REASONS = ["all_covered", "manual_candidate", "time_ceiling"];
 
   if (interviewState === "complete") {
-    if (isSuccessEnd) {
+    if (endedReason === "manual_assessor") {
+      return (
+        <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
+          <div className="text-4xl">👋</div>
+          <h2 className="text-xl font-semibold">Interview Ended</h2>
+          <p className="text-sm text-muted-foreground">
+            The interviewer has ended this session.
+            <br />
+            Your responses have been recorded and will be reviewed by the hiring team.
+          </p>
+        </div>
+      );
+    }
+
+    if (SUCCESS_END_REASONS.includes(endedReason ?? "")) {
       return (
         <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
           <div className="text-4xl">✅</div>
