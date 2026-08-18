@@ -7,13 +7,22 @@ require 'faye/websocket'
 class AudioWebSocketMiddleware
   AUDIO_PATH_PATTERN = %r{\A/ws/sessions/([^/]+)/audio\z}
 
-  MAX_RECONNECT_ATTEMPTS = 3
-  RECONNECT_BACKOFF = [1, 2, 4].freeze
+  RECONNECT_BACKOFF = [1, 2, 4, 8, 15, 30, 30, 30].freeze
+  MAX_RECONNECT_DURATION = 180        # seconds to keep retrying before giving up
+  DROP_RESUMPTION_AFTER_ATTEMPTS = 3  # a stale resumption token can cause hard-close loops — start fresh after this
+  PROACTIVE_CONNECT_TIMEOUT = 15      # if the probe connection isn't ready in time, roll back to the live one
   BROWSER_GRACE_PERIOD = 120 # seconds to keep Gemini alive after browser disconnects
   PROACTIVE_RECONNECT_AFTER = ENV.fetch('PROACTIVE_RECONNECT_AFTER', 510).to_i
   PROACTIVE_RECONNECT_JITTER = 30  # randomise to avoid thundering herd
 
   SYSTEM_SIGNAL_TOKEN = 'SYS-TC-7x9k'
+
+  # Primary model is the configured one; the rest are self-healing fallbacks in case Gemini
+  # rejects the configured model on the Live endpoint (1008 model-not-found).
+  GEMINI_LIVE_MODELS = [
+    ENV.fetch('GEMINI_LIVE_MODEL', 'gemini-3.1-flash-live-preview'),
+    'gemini-3.5-live-translate-preview'
+  ].uniq.freeze
 
   WRAP_UP_SIGNAL = "[TIME CONTROL:#{SYSTEM_SIGNAL_TOKEN}] { \"wrap_up\": true, \"all_skills_covered\": true }" \
                    ' — Close the interview NOW. Do NOT ask any more questions.' \
@@ -94,9 +103,23 @@ class AudioWebSocketMiddleware
     Rails.logger.info("[AudioWS] Browser disconnected: session=#{session_id} code=#{event.code}")
     state.browser_disconnected_at = Time.current
     state.proactive_reconnect_timer&.cancel
+    abort_pending_proactive_reconnect(state)
 
     # Keep Gemini alive during grace period in case candidate reconnects via page refresh.
     schedule_graceful_end(browser_ws, state)
+  end
+
+  # Abandons an in-flight proactive probe (rollback target) — used when the browser goes away.
+  def abort_pending_proactive_reconnect(state)
+    state.reconnect_timeout_timer&.cancel
+    state.reconnect_timeout_timer = nil
+    pending = state.pending_gemini_client
+    return unless pending
+
+    state.pending_gemini_client = nil
+    state.retiring_gemini_client = nil
+    pending.supersede!
+    pending.close
   end
 
   def connect_to_gemini(browser_ws, state)
@@ -133,21 +156,24 @@ class AudioWebSocketMiddleware
     end
   end
 
-  def build_gemini_client(browser_ws, state)
+  def build_gemini_client(browser_ws, state, proactive: false)
     session = state.session
-
-    state.gemini_client = Gemini::LiveClient.new(
+    client = nil
+    client = Gemini::LiveClient.new(
+      model: GEMINI_LIVE_MODELS[state.gemini_model_index || 0],
       system_prompt: session.assessment.system_prompt,
       on_audio: build_on_audio(browser_ws, state),
       on_input_transcription: build_on_input_transcription(browser_ws, state, session),
       on_output_transcription: build_on_output_transcription(browser_ws, state, session),
       on_model_turn_complete: build_on_model_turn_complete(browser_ws, state, session),
       on_go_away: ->(time_left:, resumption_token:) { handle_go_away(browser_ws, state, resumption_token) },
-      on_close: ->(code:, reason:) { handle_gemini_close(browser_ws, state, code: code, reason: reason) },
+      on_close: ->(code:, reason:) { handle_gemini_close(browser_ws, state, code: code, reason: reason, client: client) },
       on_error: ->(message) { Rails.logger.error("[AudioWS] Gemini error: session=#{session.id} #{message}") },
       on_resumption_token_update: build_on_resumption_token_update(state, session),
-      on_ready: build_on_ready(browser_ws, state, session)
+      on_ready: build_on_ready(browser_ws, state, session, proactive: proactive)
     )
+    state.gemini_client = client unless proactive
+    client
   end
 
   def build_on_audio(browser_ws, state)
@@ -321,13 +347,19 @@ class AudioWebSocketMiddleware
     }
   end
 
-  def build_on_ready(browser_ws, state, session)
+  def build_on_ready(browser_ws, state, session, proactive: false)
     lambda {
+      if proactive
+        finish_proactive_reconnect(browser_ws, state)
+        next
+      end
+
       state.logged_not_ready = false
       if state.reconnecting
         Rails.logger.info("[AudioWS] Gemini reconnected for session #{session.id}")
         state.reconnecting = false
         state.reconnect_attempts = 0
+        state.reconnect_started_at = nil
         send_json(browser_ws, type: 'reconnected')
         send_json(browser_ws, type: 'speaker_changed', speaker: 'candidate')
       else
@@ -373,30 +405,62 @@ class AudioWebSocketMiddleware
   end
 
   # Handles unexpected Gemini WebSocket close (not GoAway). Audio is buffered during the gap and replayed.
-  def handle_gemini_close(browser_ws, state, code:, reason:)
+  def handle_gemini_close(browser_ws, state, code:, reason:, client: nil)
+    # A proactive-reconnect probe failed while the existing connection is (or may be) healthy — roll back.
+    if state.pending_gemini_client
+      rollback_proactive_reconnect(browser_ws, state, reason: "close(#{code})")
+      return
+    end
+
+    # Ignore close events from clients that are no longer the active one (superseded clients are
+    # skipped by LiveClient, but guard anyway against re-entrancy from legacy callers).
+    return unless client.nil? || state.gemini_client.equal?(client)
+
     # Normal close (1000) is intentional unless flagged as inactivity_close (which also uses 1000).
     return if code == 1000 && !state.gemini_client&.inactivity_close
 
+    # Gemini rejecting the model (1008 not-found/not-supported) is deterministic — rotate to the
+    # next candidate model and restart the budget so a fresh attempt gets a clean shot.
+    if model_not_found?(code, reason)
+      rotate_gemini_model(state, reason)
+    end
+
+    state.reconnect_started_at ||= Process.clock_gettime(Process::CLOCK_MONOTONIC)
     state.proactive_reconnect_timer&.cancel
     state.reconnect_attempts ||= 0
 
-    if state.reconnect_attempts < MAX_RECONNECT_ATTEMPTS
-      schedule_gemini_reconnect(browser_ws, state, code)
-    else
-      Rails.logger.error("[AudioWS] Gemini reconnection failed after #{MAX_RECONNECT_ATTEMPTS} attempts")
-      Sessions::EndHandler.new(state.session).call(reason: 'error')
-      send_json(browser_ws, type: 'session_ended', reason: 'error',
-                            message: 'The session encountered a problem. Please contact the interviewer.')
-      browser_ws.close
-    end
+    schedule_gemini_reconnect(browser_ws, state, code)
+  end
+
+  def model_not_found?(code, reason)
+    code == 1008 && reason.to_s.match?(/not found|not supported/i)
+  end
+
+  def rotate_gemini_model(state, reason)
+    index = (state.gemini_model_index || 0) + 1
+    state.gemini_model_index = index % GEMINI_LIVE_MODELS.length
+    state.reconnect_attempts = 0
+    state.reconnect_started_at = nil
+    # The old session is tied to the rejected model — drop the resumption handle so the retry
+    # starts a clean session instead of resuming onto an incompatible one.
+    state.latest_resumption_token = nil
+    state.session.update_column(:gemini_resumption_token, nil) if state.session
+    Rails.logger.warn("[AudioWS] Model rejected by Gemini (#{reason}) — rotating to #{GEMINI_LIVE_MODELS[state.gemini_model_index]}")
   end
 
   def schedule_gemini_reconnect(browser_ws, state, code)
-    backoff = RECONNECT_BACKOFF[state.reconnect_attempts] || 4
+    elapsed = state.reconnect_started_at ? (Process.clock_gettime(Process::CLOCK_MONOTONIC) - state.reconnect_started_at) : 0
+
+    if elapsed > MAX_RECONNECT_DURATION
+      fail_reconnect(browser_ws, state)
+      return
+    end
+
+    backoff = RECONNECT_BACKOFF[[state.reconnect_attempts, RECONNECT_BACKOFF.length - 1].min]
     state.reconnect_attempts += 1
     state.reconnecting = true
 
-    Rails.logger.warn("[AudioWS] Gemini closed unexpectedly (code=#{code}) — retry #{state.reconnect_attempts}/#{MAX_RECONNECT_ATTEMPTS} in #{backoff}s")
+    Rails.logger.warn("[AudioWS] Gemini closed unexpectedly (code=#{code}) — retry #{state.reconnect_attempts} in #{backoff}s (elapsed=#{elapsed.round(1)}s)")
     send_json(browser_ws, type: 'reconnecting') if state.reconnect_attempts == 1
     if state.model_speaking
       state.model_speaking = false
@@ -410,9 +474,19 @@ class AudioWebSocketMiddleware
 
       state.gemini_client&.supersede!
       build_gemini_client(browser_ws, state)
-      token = state.latest_resumption_token || state.session.gemini_resumption_token.presence
+      # Drop the resumption token after the first few failures — a stale token is a common cause of
+      # hard-close loops; a fresh session beats a dead interview.
+      token = state.reconnect_attempts < DROP_RESUMPTION_AFTER_ATTEMPTS ? (state.latest_resumption_token || state.session.gemini_resumption_token.presence) : nil
       state.gemini_client.connect(resumption_handle: token)
     end
+  end
+
+  def fail_reconnect(browser_ws, state)
+    Rails.logger.error("[AudioWS] Gemini reconnection failed after #{MAX_RECONNECT_DURATION}s — ending session #{state.session.id}")
+    Sessions::EndHandler.new(state.session).call(reason: 'error')
+    send_json(browser_ws, type: 'session_ended', reason: 'error',
+                          message: 'The interview connection was lost and could not be restored. Please contact the interviewer.')
+    browser_ws.close
   end
 
   def handle_browser_message(data, browser_ws, state)
@@ -423,7 +497,9 @@ class AudioWebSocketMiddleware
       if Rails.env.development?
         Rails.logger.warn("[AudioWS] DEBUG: forcing Gemini disconnect for session #{state.session&.id}")
         old_client = state.gemini_client
-        handle_gemini_close(browser_ws, state, code: 1011, reason: 'debug_force_reconnect')
+        handle_gemini_close(browser_ws, state, code: 1011, reason: 'debug_force_reconnect', client: old_client)
+        # Supersede BEFORE close so the resulting close event doesn't double-schedule a retry.
+        old_client&.supersede!
         old_client&.close
       end
     when 'end_session'
@@ -431,6 +507,8 @@ class AudioWebSocketMiddleware
       state.graceful_end_timer&.cancel
       state.time_ceiling_timer&.cancel
       state.coverage_end_timer&.cancel
+      state.reconnect_timeout_timer&.cancel
+      abort_pending_proactive_reconnect(state)
       Sessions::EndHandler.new(state.session).call(reason: 'manual_candidate')
       send_json(browser_ws, type: 'session_ended', reason: 'manual_candidate')
       state.gemini_client&.close
@@ -450,7 +528,8 @@ class AudioWebSocketMiddleware
     Rails.logger.info("[AudioWS] Proactive reconnect scheduled in #{delay}s for session #{state.session.id}")
   end
 
-  # Starts a new Gemini connection while the old one is still live; swaps in on_ready and replays audio.
+  # Probes a new Gemini connection while the old one stays live. The old connection is only
+  # superseded/closed once the probe is ready — a failed probe rolls back without touching the interview.
   def initiate_proactive_reconnect(browser_ws, state)
     if state.reconnecting
       Rails.logger.info("[AudioWS] Proactive reconnect skipped — already reconnecting (session #{state.session.id})")
@@ -480,21 +559,84 @@ class AudioWebSocketMiddleware
     end
 
     Rails.logger.info("[AudioWS] Initiating proactive reconnect for session #{state.session.id}")
+
+    # Freeze the live client's callbacks while probing so no events can duplicate on two sockets,
+    # but keep its socket open as the rollback target. The physical swap happens in finish_proactive_reconnect.
     state.reconnecting = true
+    state.reconnect_attempts = 0
+    state.retiring_gemini_client = state.gemini_client
+    state.retiring_gemini_client&.supersede!
 
-    if state.model_speaking
-      state.model_speaking = false
-      send_json(browser_ws, type: 'speaker_changed', speaker: 'candidate')
+    pending = build_gemini_client(browser_ws, state, proactive: true)
+    state.pending_gemini_client = pending
+    pending.connect(resumption_handle: token)
+
+    # If the probe never becomes ready, roll back to the still-open old connection.
+    state.reconnect_timeout_timer = EM::Timer.new(PROACTIVE_CONNECT_TIMEOUT) do
+      rollback_proactive_reconnect(browser_ws, state, reason: 'connect_timeout') if state.pending_gemini_client.equal?(pending)
     end
+  end
 
-    state.session.update_column(:gemini_resumption_token, token)
+  # Probe connection is ready — atomically swap it in for the retiring one.
+  def finish_proactive_reconnect(browser_ws, state)
+    state.reconnect_timeout_timer&.cancel
+    state.reconnect_timeout_timer = nil
 
-    old_client = state.gemini_client
-    old_client&.supersede!
-    build_gemini_client(browser_ws, state)
-    state.gemini_client.connect(resumption_handle: token)
-    # Close old connection after new one is set up to minimise the gap.
-    EM.add_timer(2) { old_client&.close }
+    retiring = state.retiring_gemini_client
+    pending = state.pending_gemini_client
+    state.pending_gemini_client = nil
+    state.retiring_gemini_client = nil
+
+    state.gemini_client = pending
+    retiring&.close
+
+    state.reconnecting = false
+    state.reconnect_attempts = 0
+    state.reconnect_started_at = nil
+    state.logged_not_ready = false
+
+    Rails.logger.info("[AudioWS] Proactive reconnect complete for session #{state.session.id}")
+    send_json(browser_ws, type: 'reconnected')
+    send_json(browser_ws, type: 'speaker_changed', speaker: 'candidate')
+    schedule_proactive_reconnect(browser_ws, state)
+  end
+
+  # Probe failed or timed out — abandon it and restore the live connection.
+  def rollback_proactive_reconnect(browser_ws, state, reason:)
+    pending = state.pending_gemini_client
+    return unless pending
+
+    state.pending_gemini_client = nil
+    state.retiring_gemini_client = nil
+    state.reconnect_timeout_timer&.cancel
+    state.reconnect_timeout_timer = nil
+
+    pending.supersede!
+    pending.close
+
+    active = state.gemini_client
+    active&.reactivate!
+
+    if active&.connected
+      state.reconnecting = false
+      state.reconnect_attempts = 0
+      state.reconnect_started_at = nil
+      Rails.logger.warn("[AudioWS] Proactive reconnect rolled back (#{reason}) — keeping existing connection (session=#{state.session.id})")
+      send_json(browser_ws, type: 'reconnected')
+      send_json(browser_ws, type: 'speaker_changed', speaker: 'candidate')
+      schedule_proactive_reconnect(browser_ws, state)
+    else
+      # The existing connection is dead too — fall through to the normal retry flow.
+      state.reconnecting = true
+      active&.supersede! # re-freeze so its imminent close event can't double-schedule a retry
+      if active
+        Rails.logger.warn("[AudioWS] Proactive reconnect rollback: existing connection also lost — retrying (session=#{state.session.id})")
+        schedule_gemini_reconnect(browser_ws, state, 1000)
+      else
+        state.gemini_client = build_gemini_client(browser_ws, state)
+        state.gemini_client.connect(resumption_handle: state.latest_resumption_token || state.session.gemini_resumption_token.presence)
+      end
+    end
   end
 
   # Cancellable EM timer (vs Thread.new+sleep) — releases on session end without holding a thread for 2min.
@@ -771,8 +913,11 @@ class AudioWebSocketMiddleware
   # Per-connection state shared across callbacks.
   class ConnectionState
     attr_accessor :session, :gemini_client, :turn_counter,
-                  :reconnect_attempts, :browser_disconnected_at,
-                  :proactive_reconnect_timer,
+                  :reconnect_attempts, :reconnect_started_at,
+                  :browser_disconnected_at,
+                  :proactive_reconnect_timer, :reconnect_timeout_timer,
+                  :pending_gemini_client, :retiring_gemini_client,
+                  :gemini_model_index,
                   :latest_resumption_token,
                   :reconnecting, :last_token_persisted_at,
                   :ending_scheduled, :logged_not_ready,

@@ -30,6 +30,8 @@ export default function InterviewPage() {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [interviewState, setInterviewState] = useState<InterviewState>("idle");
   const [speaker, setSpeaker] = useState<InterviewSpeaker>(null);
+  const [endedReason, setEndedReason] = useState<string | null>(null);
+  const [endedMessage, setEndedMessage] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<Pick<TranscriptTurn, "speaker" | "text">[]>([]);
   const [hardwareCheckDone, setHardwareCheckDone] = useState(false); // kept for green banner
   const [connectionLostLong, setConnectionLostLong] = useState(false);
@@ -46,9 +48,16 @@ export default function InterviewPage() {
       .then((res) => {
         setCandidateInfo(res.data);
         setSessionId(res.data.session_id);
-        if (res.data.session_status === "ended") setInterviewState("complete");
+        if (res.data.session_status === "ended") {
+          setEndedReason(res.data.end_reason ?? "error");
+          setInterviewState("complete");
+        }
       })
-      .catch(() => setInterviewState("complete"));
+      .catch(() => {
+        setEndedReason("error");
+        setEndedMessage("Could not verify your interview link.");
+        setInterviewState("complete");
+      });
   }, [token]);
 
   const muteRef = useRef<(() => void) | null>(null);
@@ -138,6 +147,10 @@ export default function InterviewPage() {
     onStateChange: handleStateChange,
     onSpeakerChange: handleSpeakerChange,
     onReconnected: handleReconnected,
+    onSessionEnded: (reason, message) => {
+      setEndedReason(reason ?? "error");
+      setEndedMessage(message ?? null);
+    },
   });
 
   const { start: startCapture, stop: stopCapture, mute, unmute } = useAudioCapture({
@@ -175,6 +188,8 @@ export default function InterviewPage() {
     if (reconnectedPromptTimerRef.current) clearTimeout(reconnectedPromptTimerRef.current);
     stopCapture();
     stopPlayback();
+    setEndedReason("manual_candidate");
+    setEndedMessage(null);
     sendJson({ type: "end_session" });
     disconnect();
     setInterviewState("complete");
@@ -227,15 +242,33 @@ export default function InterviewPage() {
   }
 
   // ── State F: Complete ───────────────────────────────────────────────────
+  const SUCCESS_END_REASONS = ["all_covered", "manual_candidate", "manual_assessor", "time_ceiling"];
+  const isSuccessEnd = SUCCESS_END_REASONS.includes(endedReason ?? "");
+
   if (interviewState === "complete") {
+    if (isSuccessEnd) {
+      return (
+        <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
+          <div className="text-4xl">✅</div>
+          <h2 className="text-xl font-semibold">Interview Complete</h2>
+          <p className="text-sm text-muted-foreground">
+            Thank you. The interview has been recorded.
+            <br />
+            The hiring team will review your results and follow up with you.
+          </p>
+        </div>
+      );
+    }
+
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
-        <div className="text-4xl">✅</div>
-        <h2 className="text-xl font-semibold">Interview Complete</h2>
+        <div className="text-4xl">⚠️</div>
+        <h2 className="text-xl font-semibold">Interview Interrupted</h2>
         <p className="text-sm text-muted-foreground">
-          Thank you. The interview has been recorded.
+          {endedMessage ??
+            "The interview connection was lost before the interview could be completed."}
           <br />
-          The hiring team will review your results and follow up with you.
+          Please contact the interviewer to reschedule or retry.
         </p>
       </div>
     );

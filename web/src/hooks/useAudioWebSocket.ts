@@ -10,9 +10,11 @@ interface UseAudioWebSocketOptions {
   onStateChange: (state: InterviewState) => void;
   onSpeakerChange: (speaker: InterviewSpeaker) => void;
   onReconnected?: () => void;
+  onSessionEnded?: (reason?: string, message?: string) => void;
 }
 
-const RECONNECT_DELAYS = [1000, 2000, 4000];
+// Deep traffic-light grace runs the full server window (BROWSER_GRACE_PERIOD=120s) before giving up.
+const RECONNECT_DELAYS = [1000, 2000, 4000, 8000, 15000, 20000, 20000, 20000];
 
 export function useAudioWebSocket({
   sessionId,
@@ -22,6 +24,7 @@ export function useAudioWebSocket({
   onStateChange,
   onSpeakerChange,
   onReconnected,
+  onSessionEnded,
 }: UseAudioWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -100,10 +103,16 @@ export function useAudioWebSocket({
             case "session_ended":
               sessionEndedRef.current = true;
               reconnectAttemptsRef.current = RECONNECT_DELAYS.length; // suppress reconnect
+              onSessionEnded?.(msg.reason, msg.message);
               onStateChange("complete");
               break;
             case "error":
-              if (!msg.recoverable) onStateChange("complete");
+              if (!msg.recoverable) {
+                sessionEndedRef.current = true;
+                reconnectAttemptsRef.current = RECONNECT_DELAYS.length;
+                onSessionEnded?.(msg.reason ?? "error", msg.message);
+                onStateChange("complete");
+              }
               break;
           }
         } catch {
@@ -127,10 +136,11 @@ export function useAudioWebSocket({
           connect();
         }, RECONNECT_DELAYS[attempt]);
       } else {
+        onSessionEnded?.(undefined, "The connection was lost before the interview finished.");
         onStateChange("complete");
       }
     };
-  }, [sessionId, token, onAudioChunk, onTranscript, onStateChange, onSpeakerChange]);
+  }, [sessionId, token, onAudioChunk, onTranscript, onStateChange, onSpeakerChange, onSessionEnded]);
 
   const send = useCallback((buffer: ArrayBuffer) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
