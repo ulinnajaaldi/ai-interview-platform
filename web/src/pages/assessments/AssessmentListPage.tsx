@@ -21,6 +21,9 @@ function SessionSummary({ session }: { session?: Assessment["latest_session"] })
   if (session.status === "ended" && session.end_reason === "error")
     return <span className="text-xs text-destructive">Last: failed</span>;
 
+  if (session.status === "ended" && session.end_reason === "abandoned")
+    return <span className="text-xs text-amber-600">Last: abandoned</span>;
+
   if (session.status === "ended")
     return <span className="text-xs text-muted-foreground">Last: completed</span>;
 

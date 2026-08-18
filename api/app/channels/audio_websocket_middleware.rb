@@ -65,6 +65,9 @@ class AudioWebSocketMiddleware
     end
 
     state.session = session
+    # Candidate is here — record presence so the assessor can see when the candidate
+    # left and when they came back (browser close marks them offline).
+    session.update_columns(candidate_online: true, candidate_last_seen_at: Time.current)
     connect_to_gemini(browser_ws, state)
   rescue StandardError => e
     Rails.logger.error("[AudioWS] Exception in on:open: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
@@ -101,6 +104,7 @@ class AudioWebSocketMiddleware
 
   def handle_browser_close(event, browser_ws, state, session_id)
     Rails.logger.info("[AudioWS] Browser disconnected: session=#{session_id} code=#{event.code}")
+    state.session&.update_columns(candidate_online: false, candidate_last_seen_at: Time.current)
     state.browser_disconnected_at = Time.current
     state.proactive_reconnect_timer&.cancel
     abort_pending_proactive_reconnect(state)
@@ -648,8 +652,8 @@ class AudioWebSocketMiddleware
         ActiveRecord::Base.connection_pool.with_connection do
           next if state.session.reload.ended?
 
-          Rails.logger.info("[AudioWS] Grace period expired — ending session #{state.session.id}")
-          Sessions::EndHandler.new(state.session).call(reason: 'error')
+          Rails.logger.info("[AudioWS] Grace period expired — ending session #{state.session.id} (candidate never returned)")
+          Sessions::EndHandler.new(state.session).call(reason: 'abandoned')
           EM.schedule { state.gemini_client&.close }
         end
       rescue StandardError => e

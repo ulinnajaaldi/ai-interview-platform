@@ -194,6 +194,8 @@ module Api
           tenant_id:        session.tenant_id,
           candidate_id:     session.candidate_id,
           candidate_name:   session.candidate_name,
+          candidate_online: session.candidate_online,
+          candidate_last_seen_at: session.candidate_last_seen_at&.iso8601,
           invite_token:     session.invite_token,
           invite_url:       session.invite_url,
           status:           session.status,

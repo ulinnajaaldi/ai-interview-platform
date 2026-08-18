@@ -59,6 +59,8 @@ export default function LiveMonitorPage() {
   const [ending, setEnding] = useState(false);
   const [endError, setEndError] = useState(false);
   const [sessionActive, setSessionActive] = useState(true);
+  const [candidateOnline, setCandidateOnline] = useState<boolean | null>(null);
+  const [candidateLastSeen, setCandidateLastSeen] = useState<string | null>(null);
   const lastTurnRef = useRef<number>(0);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -83,6 +85,8 @@ export default function LiveMonitorPage() {
         const s = sRes.data.session as any;
         setStartedAt(s.started_at ?? null);
         setAssessmentName(s.assessment?.name ?? "");
+        setCandidateOnline(s.candidate_online ?? null);
+        setCandidateLastSeen(s.candidate_last_seen_at ?? null);
         if (s.status !== "active") setSessionActive(false);
 
         const turns = tRes.data.turns;
@@ -115,6 +119,22 @@ export default function LiveMonitorPage() {
     pollTimerRef.current = setInterval(fetchNewTurns, 3000);
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };
   }, [sessionActive, loading, fetchNewTurns]);
+
+  // Refresh candidate presence every 10s so the assessor sees when the candidate
+  // leaves and when they come back.
+  useEffect(() => {
+    if (!sessionActive || loading) return;
+    const id = setInterval(() => {
+      sessionsApi.get(Number(sessionId))
+        .then((res) => {
+          const s = res.data.session as any;
+          setCandidateOnline(s.candidate_online ?? null);
+          setCandidateLastSeen(s.candidate_last_seen_at ?? null);
+        })
+        .catch(() => {});
+    }, 10_000);
+    return () => clearInterval(id);
+  }, [sessionActive, loading, sessionId]);
 
   const handleEndSession = async () => {
     setEnding(true);
@@ -153,6 +173,23 @@ export default function LiveMonitorPage() {
           </div>
           {assessmentName && (
             <p className="text-sm text-muted-foreground pl-6">{assessmentName}</p>
+          )}
+          {candidateOnline === false && (
+            <p className="flex items-center gap-1.5 pl-6 text-xs text-amber-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              Candidate offline
+              {candidateLastSeen && (
+                <span className="text-muted-foreground">
+                  since {new Date(candidateLastSeen).toLocaleTimeString()}
+                </span>
+              )}
+            </p>
+          )}
+          {candidateOnline && (
+            <p className="flex items-center gap-1.5 pl-6 text-xs text-green-600">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              Candidate online
+            </p>
           )}
         </div>
 

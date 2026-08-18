@@ -72,7 +72,13 @@ function SessionRow({
             Failed
           </span>
         )}
-        {isEnded && session.end_reason !== "error" && (
+        {isEnded && session.end_reason === "abandoned" && (
+          <span className="flex items-center gap-1 text-xs text-amber-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+            Abandoned
+          </span>
+        )}
+        {isEnded && session.end_reason !== "error" && session.end_reason !== "abandoned" && (
           <span className="flex items-center gap-1 text-xs text-green-600">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
             Completed
@@ -104,7 +110,7 @@ function SessionRow({
               <Eye className="h-3 w-3 mr-1" /> Monitor
             </Button>
           )}
-          {isEnded && session.end_reason !== "error" && (
+          {isEnded && session.end_reason !== "error" && session.end_reason !== "abandoned" && (
             <Button
               variant="outline"
               size="sm"

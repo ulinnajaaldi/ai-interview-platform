@@ -303,8 +303,10 @@ export default function InterviewPage() {
         <div className="text-4xl">⚠️</div>
         <h2 className="text-xl font-semibold">Interview Interrupted</h2>
         <p className="text-sm text-muted-foreground">
-          {endedMessage ??
-            "The interview connection was lost before the interview could be completed."}
+          {endedReason === "abandoned"
+            ? "This session ended because you left the interview. Please contact the interviewer to retake."
+            : (endedMessage ??
+              "The interview connection was lost before the interview could be completed.")}
           <br />
           Please contact the interviewer to reschedule or retry.
         </p>
