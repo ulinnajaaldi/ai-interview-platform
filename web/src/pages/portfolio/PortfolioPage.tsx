@@ -31,7 +31,7 @@ export default function PortfolioPage() {
 
   const {
     data: portfolioData,
-    isPending: portfolioLoading,
+    isLoading: portfolioLoading,
     refetch: refetchPortfolio,
   } = useGetPortfolio(Number(sessionId));
   const { data: sessionData } = useGetSession(Number(sessionId));

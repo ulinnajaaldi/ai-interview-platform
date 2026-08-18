@@ -65,8 +65,8 @@ export default function LiveMonitorPage() {
     Number(sessionId)
   );
 
-  const { data: sessionData, isPending: sessionLoading } = useGetSession(Number(sessionId));
-  const { data: transcriptData, isPending: transcriptLoading } = useGetTranscript(
+  const { data: sessionData, isLoading: sessionLoading } = useGetSession(Number(sessionId));
+  const { data: transcriptData, isLoading: transcriptLoading } = useGetTranscript(
     Number(sessionId)
   );
 

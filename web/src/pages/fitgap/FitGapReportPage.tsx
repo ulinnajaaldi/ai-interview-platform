@@ -23,12 +23,12 @@ export default function FitGapReportPage() {
   const [exporting, setExporting] = useState<"pdf" | "json" | null>(null);
   const [generationTriggered, setGenerationTriggered] = useState(false);
 
-  const { data: portfolioData, isPending: portfolioLoading } = useGetPortfolio(Number(sessionId));
+  const { data: portfolioData, isLoading: portfolioLoading } = useGetPortfolio(Number(sessionId));
   const portfolio: Portfolio | null = (portfolioData as any)?.portfolio ?? null;
 
   const {
     data: fitGapData,
-    isPending: fitGapLoading,
+    isLoading: fitGapLoading,
     refetch: refetchFitGap,
     error: fitGapError,
   } = useGetFitGap(portfolio?.id ?? 0, Number(vacancyId), { enabled: !!portfolio?.id });

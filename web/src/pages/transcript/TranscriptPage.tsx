@@ -6,7 +6,7 @@ import { ArrowLeft, Download } from "lucide-react";
 
 export default function TranscriptPage() {
   const { id, sessionId } = useParams<{ id: string; sessionId: string }>();
-  const { data: tData, isPending, isError } = useGetTranscript(Number(sessionId));
+  const { data: tData, isLoading, isError } = useGetTranscript(Number(sessionId));
   const { data: sData } = useGetSession(Number(sessionId));
   const turns = tData?.turns ?? [];
   const candidateName = sData?.session.candidate_name ?? null;
@@ -40,7 +40,7 @@ export default function TranscriptPage() {
             {candidateName && <p className="text-sm text-muted-foreground">{candidateName}</p>}
           </div>
         </div>
-        {!isPending && !isError && turns.length > 0 && (
+        {!isLoading && !isError && turns.length > 0 && (
           <Button variant="outline" size="sm" onClick={handleDownload}>
             <Download className="h-3.5 w-3.5 mr-1.5" />
             Download .txt
@@ -48,7 +48,7 @@ export default function TranscriptPage() {
         )}
       </div>
 
-      {isPending && (
+      {isLoading && (
         <div className="space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-16 w-full" />
@@ -56,19 +56,19 @@ export default function TranscriptPage() {
         </div>
       )}
 
-      {!isPending && isError && (
+      {!isLoading && isError && (
         <div className="border rounded-lg p-6 text-center text-sm text-destructive">
           Failed to load transcript. Please refresh.
         </div>
       )}
 
-      {!isPending && !isError && turns.length === 0 && (
+      {!isLoading && !isError && turns.length === 0 && (
         <div className="border rounded-lg p-6 text-center text-sm text-muted-foreground">
           No transcript available for this session.
         </div>
       )}
 
-      {!isPending && !isError && turns.length > 0 && (
+      {!isLoading && !isError && turns.length > 0 && (
         <div className="space-y-3">
           {turns.map((turn) => {
             const isAI = turn.speaker === "ai";

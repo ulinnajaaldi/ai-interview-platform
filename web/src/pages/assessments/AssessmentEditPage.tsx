@@ -41,7 +41,7 @@ export default function AssessmentEditPage() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const { data, isPending } = useGetAssessment(Number(id));
+  const { data, isLoading } = useGetAssessment(Number(id));
   const updateAssessment = useUpdateAssessment({
     onSuccess: () => navigate(`/assessments/${id}/invite`),
     onError: (e) => setError(e?.message ?? "Failed to save."),
@@ -98,7 +98,7 @@ export default function AssessmentEditPage() {
     });
   };
 
-  if (isPending) {
+  if (isLoading) {
     return (
       <div className="max-w-2xl mx-auto space-y-4">
         <Skeleton className="h-8 w-48" />

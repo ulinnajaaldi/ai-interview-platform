@@ -169,10 +169,10 @@ export default function AssessmentInvitePage() {
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [candidateNameInput, setCandidateNameInput] = useState("");
 
-  const { data: assessmentData, isPending: assessmentLoading } = useGetAssessment(Number(id));
+  const { data: assessmentData, isLoading: assessmentLoading } = useGetAssessment(Number(id));
   const {
     data: sessionsData,
-    isPending: sessionsLoading,
+    isLoading: sessionsLoading,
     refetch: refetchSessions,
   } = useGetAssessmentSessions(Number(id));
 

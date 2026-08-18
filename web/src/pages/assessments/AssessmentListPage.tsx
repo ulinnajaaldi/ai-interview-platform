@@ -30,7 +30,7 @@ function SessionSummary({ session }: { session?: Assessment["latest_session"] })
 }
 
 export default function AssessmentListPage() {
-  const { data, isPending, isError } = useGetAssessments();
+  const { data, isLoading, isError } = useGetAssessments();
   const assessments = data?.assessments ?? [];
   const navigate = useNavigate();
 
@@ -49,7 +49,7 @@ export default function AssessmentListPage() {
         </div>
       )}
 
-      {isPending ? (
+      {isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-16 w-full" />

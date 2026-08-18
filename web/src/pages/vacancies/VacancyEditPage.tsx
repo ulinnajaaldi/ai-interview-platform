@@ -25,7 +25,7 @@ export default function VacancyEditPage() {
   const navigate = useNavigate();
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const { data, isPending } = useGetVacancy(Number(id));
+  const { data, isLoading } = useGetVacancy(Number(id));
   const updateVacancy = useUpdateVacancy({
     onSuccess: () => navigate("/vacancies"),
   });
@@ -64,7 +64,7 @@ export default function VacancyEditPage() {
     });
   };
 
-  if (isPending)
+  if (isLoading)
     return (
       <div className="max-w-2xl mx-auto space-y-4">
         <Skeleton className="h-8 w-48" />
