@@ -10,12 +10,15 @@ export const useCreateSession = (
   >,
 ) => {
   const qc = useQueryClient();
+  const { onSuccess: userOnSuccess, onError, ...restOpt } = opt ?? {};
   return useMutation({
     mutationFn: ({ assessmentId, candidateName, candidateId }) =>
       assessmentsApi.createSession(assessmentId, candidateName, candidateId).then((r) => r.data),
-    onSuccess: (_d, vars) => {
+    onSuccess: (data, vars, ctx, mutation) => {
       qc.invalidateQueries({ queryKey: assessmentQueryKeys.sessions(vars.assessmentId) });
+      userOnSuccess?.(data, vars, ctx, mutation);
     },
-    ...opt,
+    onError,
+    ...restOpt,
   });
 };

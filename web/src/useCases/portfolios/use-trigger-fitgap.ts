@@ -10,14 +10,16 @@ export const useTriggerFitGap = (
   >,
 ) => {
   const qc = useQueryClient();
+  const { onSuccess: userOnSuccess, ...restOpt } = opt ?? {};
   return useMutation({
     mutationFn: ({ portfolioId, vacancyId }) =>
       portfoliosApi.triggerFitGap(portfolioId, vacancyId).then((r) => r.data),
-    onSuccess: (_d, vars) => {
+    onSuccess: (data, vars, ctx, mutation) => {
       qc.invalidateQueries({
         queryKey: portfolioQueryKeys.fitGap(vars.portfolioId, vars.vacancyId),
       });
+      userOnSuccess?.(data, vars, ctx, mutation);
     },
-    ...opt,
+    ...restOpt,
   });
 };

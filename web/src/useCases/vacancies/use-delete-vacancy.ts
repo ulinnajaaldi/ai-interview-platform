@@ -6,9 +6,13 @@ export const useDeleteVacancy = (
   opt?: UseMutationOptions<void, Error, number>,
 ) => {
   const qc = useQueryClient();
+  const { onSuccess: userOnSuccess, ...restOpt } = opt ?? {};
   return useMutation({
     mutationFn: (id) => vacanciesApi.delete(id).then(() => undefined),
-    onSuccess: () => qc.invalidateQueries({ queryKey: vacancyQueryKeys.all }),
-    ...opt,
+    onSuccess: (data, id, ctx, mutation) => {
+      qc.invalidateQueries({ queryKey: vacancyQueryKeys.all });
+      userOnSuccess?.(data, id, ctx, mutation);
+    },
+    ...restOpt,
   });
 };

@@ -6,9 +6,13 @@ export const useDeleteAssessment = (
   opt?: UseMutationOptions<void, Error, number>,
 ) => {
   const qc = useQueryClient();
+  const { onSuccess: userOnSuccess, ...restOpt } = opt ?? {};
   return useMutation({
     mutationFn: (id) => assessmentsApi.delete(id).then(() => undefined),
-    onSuccess: () => qc.invalidateQueries({ queryKey: assessmentQueryKeys.all }),
-    ...opt,
+    onSuccess: (data, id, ctx, mutation) => {
+      qc.invalidateQueries({ queryKey: assessmentQueryKeys.all });
+      userOnSuccess?.(data, id, ctx, mutation);
+    },
+    ...restOpt,
   });
 };

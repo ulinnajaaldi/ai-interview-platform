@@ -10,12 +10,14 @@ export const useUpdateAssessment = (
   >,
 ) => {
   const qc = useQueryClient();
+  const { onSuccess: userOnSuccess, ...restOpt } = opt ?? {};
   return useMutation({
     mutationFn: ({ id, data }) => assessmentsApi.update(id, data).then((r) => r.data),
-    onSuccess: (_d, vars) => {
+    onSuccess: (data, vars, ctx, mutation) => {
       qc.invalidateQueries({ queryKey: assessmentQueryKeys.all });
       qc.invalidateQueries({ queryKey: assessmentQueryKeys.detail(vars.id) });
+      userOnSuccess?.(data, vars, ctx, mutation);
     },
-    ...opt,
+    ...restOpt,
   });
 };

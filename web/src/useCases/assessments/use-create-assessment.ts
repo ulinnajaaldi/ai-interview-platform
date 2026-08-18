@@ -6,9 +6,13 @@ export const useCreateAssessment = (
   opt?: UseMutationOptions<Awaited<ReturnType<typeof assessmentsApi.create>>["data"], Error, AssessmentPayload>,
 ) => {
   const qc = useQueryClient();
+  const { onSuccess: userOnSuccess, ...restOpt } = opt ?? {};
   return useMutation({
     mutationFn: (data) => assessmentsApi.create(data).then((r) => r.data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: assessmentQueryKeys.all }),
-    ...opt,
+    onSuccess: (data, vars, ctx, mutation) => {
+      qc.invalidateQueries({ queryKey: assessmentQueryKeys.all });
+      userOnSuccess?.(data, vars, ctx, mutation);
+    },
+    ...restOpt,
   });
 };
