@@ -98,21 +98,21 @@ export default function FitGapReportPage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="space-y-1">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="space-y-1 min-w-0">
           <div className="flex items-center gap-2">
             <Link
               to={`/assessments/${id}/sessions/${sessionId}/portfolio`}
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground shrink-0"
             >
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <h1 className="text-lg font-semibold">Fit/Gap Report</h1>
+            <h1 className="text-lg font-semibold truncate">Fit/Gap Report</h1>
           </div>
         </div>
 
         {portfolio && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
@@ -210,9 +210,9 @@ export default function FitGapReportPage() {
                   {portfolio.skills
                     .filter((s) => s.is_discovered)
                     .map((s) => (
-                      <div key={s.id} className="text-sm flex items-center gap-2">
-                        <span className="font-medium">{s.skill_label}</span>
-                        <span className="text-muted-foreground">
+                      <div key={s.id} className="text-sm flex items-start gap-2">
+                        <span className="font-medium shrink-0">{s.skill_label}</span>
+                        <span className="text-muted-foreground shrink-0">
                           {s.ai_level} (
                           {s.ai_confidence?.toLowerCase() === "low"
                             ? "low confidence"

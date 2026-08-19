@@ -57,13 +57,13 @@ function SessionRow({
   const displayName = session.candidate_name || `Candidate ${index}`;
 
   return (
-    <div className="flex items-center justify-between py-3 px-4">
-      <div className="flex items-center gap-3">
-        <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-medium text-muted-foreground">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 py-3 px-4">
+      <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center justify-center w-7 h-7 rounded-full bg-muted text-xs font-medium text-muted-foreground shrink-0">
           {index}
         </div>
-        <div className="space-y-0.5">
-          <div className="text-sm font-medium">{displayName}</div>
+        <div className="space-y-0.5 min-w-0">
+          <div className="text-sm font-medium truncate">{displayName}</div>
           {session.started_at && (
             <div className="text-xs text-muted-foreground">
               {new Date(session.started_at).toLocaleDateString()}
@@ -72,7 +72,7 @@ function SessionRow({
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         {isPending && (
           <span className="flex items-center gap-1 text-xs text-amber-600">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
@@ -104,7 +104,7 @@ function SessionRow({
           </span>
         )}
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
           {isPending && (
             <Button
               variant="ghost"
@@ -239,21 +239,21 @@ export default function AssessmentInvitePage() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          <Link to="/assessments" className="text-muted-foreground hover:text-foreground">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Link to="/assessments" className="text-muted-foreground hover:text-foreground shrink-0">
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <div>
-            <h1 className="text-lg font-semibold">{assessment?.name ?? "—"}</h1>
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold truncate">{assessment?.name ?? "—"}</h1>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-              <Clock className="h-3 w-3" />
+              <Clock className="h-3 w-3 shrink-0" />
               {assessment?.time_limit_min} min · {assessment?.skills?.length ?? 0} skills
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Button variant="outline" size="sm" onClick={() => navigate(`/assessments/${id}/edit`)}>
             <Pencil className="h-3.5 w-3.5 mr-1.5" /> Edit
           </Button>
