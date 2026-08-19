@@ -52,8 +52,9 @@ export default function AssessmentEditPage() {
     defaultValues: { name: "", time_limit_min: 45, skills: [] },
   });
 
-  // Backend only accepts TIME_LIMIT_OPTIONS. Keep the value loaded from the server as a
-  // safe fallback — a Select edge case can produce 0 (Number("") === 0) and trigger a 422.
+  // Backend only accepts TIME_LIMIT_OPTIONS — keep a valid fallback so the Select
+  // never renders empty when the watched value is 0/undefined/NaN (Radix Select
+  // shows nothing if the `value` doesn't match a SelectItem).
   const loadedTimeLimitRef = useRef<(typeof TIME_LIMIT_OPTIONS)[number]>(45);
 
   const {
@@ -65,6 +66,13 @@ export default function AssessmentEditPage() {
     formState: { errors },
   } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "skills" });
+
+  // The value shown must always be a valid TIME_LIMIT_OPTIONS entry — otherwise Radix
+  // Select renders empty (no matching SelectItem). Falls back to the loaded value.
+  const safeTimeLimit =
+    (TIME_LIMIT_OPTIONS as readonly number[]).includes(form.getValues("time_limit_min"))
+      ? (form.watch("time_limit_min") as (typeof TIME_LIMIT_OPTIONS)[number])
+      : loadedTimeLimitRef.current;
 
   useEffect(() => {
     if (data?.assessment) {
@@ -147,7 +155,7 @@ export default function AssessmentEditPage() {
             Session time limit <span className="text-destructive">*</span>
           </Label>
           <Select
-            value={String(form.watch("time_limit_min"))}
+            value={String(safeTimeLimit)}
             onValueChange={(v) => setValue("time_limit_min", Number(v))}
           >
             <SelectTrigger className="w-40">
