@@ -96,21 +96,23 @@ export default function VacancyNewPage() {
           ) : (
             <div className="space-y-2">
               {fields.map((field, index) => (
-                <div key={field.id} className="border rounded-lg p-3 space-y-2">
-                  <div className="flex items-center justify-between min-w-0">
-                    <span className="text-sm font-medium truncate">
-                      {watch(`skills.${index}.skill_label`)}
-                    </span>
+                <div key={field.id} className="border rounded-lg bg-white">
+                  <div className="flex items-center gap-2 px-3 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium text-sm truncate block">
+                        {watch(`skills.${index}.skill_label`)}
+                      </span>
+                    </div>
                     <button
                       type="button"
                       onClick={() => remove(index)}
                       aria-label={`Remove skill ${watch(`skills.${index}.skill_label`)}`}
-                      className="ml-3 text-muted-foreground hover:text-destructive shrink-0"
+                      className="text-muted-foreground hover:text-destructive shrink-0"
                     >
-                      <X className="h-4 w-4" aria-hidden />
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="space-y-1">
+                  <div className="px-3 pb-3 space-y-1">
                     <span className="text-xs text-muted-foreground">Expected level:</span>
                     <LevelRadio
                       value={watch(`skills.${index}.expected_level`) ?? 3}
