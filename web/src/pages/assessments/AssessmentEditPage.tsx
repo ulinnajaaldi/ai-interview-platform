@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import {
@@ -52,6 +52,10 @@ export default function AssessmentEditPage() {
     defaultValues: { name: "", time_limit_min: 45, skills: [] },
   });
 
+  // Backend only accepts TIME_LIMIT_OPTIONS. Keep the value loaded from the server as a
+  // safe fallback — a Select edge case can produce 0 (Number("") === 0) and trigger a 422.
+  const loadedTimeLimitRef = useRef<(typeof TIME_LIMIT_OPTIONS)[number]>(45);
+
   const {
     register,
     handleSubmit,
@@ -65,7 +69,14 @@ export default function AssessmentEditPage() {
   useEffect(() => {
     if (data?.assessment) {
       const a = data.assessment;
-      reset({ name: a.name, time_limit_min: a.time_limit_min, skills: a.skills });
+      if ((TIME_LIMIT_OPTIONS as readonly number[]).includes(a.time_limit_min)) {
+        loadedTimeLimitRef.current = a.time_limit_min as (typeof TIME_LIMIT_OPTIONS)[number];
+      }
+      reset({
+        name: a.name,
+        time_limit_min: a.time_limit_min as (typeof TIME_LIMIT_OPTIONS)[number],
+        skills: a.skills,
+      });
     }
   }, [data, reset]);
 
@@ -93,7 +104,9 @@ export default function AssessmentEditPage() {
       id: Number(id),
       data: {
         name: data.name,
-        time_limit_min: data.time_limit_min,
+        time_limit_min: (TIME_LIMIT_OPTIONS as readonly number[]).includes(data.time_limit_min)
+          ? (data.time_limit_min as (typeof TIME_LIMIT_OPTIONS)[number])
+          : loadedTimeLimitRef.current,
         assessment_skills_attributes: data.skills.map((s, i) => ({ ...s, display_order: i })),
       },
     });
