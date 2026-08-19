@@ -33,7 +33,6 @@ import { ArrowLeft, Plus, Loader2 } from "lucide-react";
 import { useGetAssessment, useUpdateAssessment } from "@/useCases/assessments";
 import { FormAlert } from "@/components/ui/form-feedback";
 import { TIME_LIMIT_OPTIONS } from "@/utils/constants";
-import type { AssessmentSkill } from "@/types";
 import type { AssessmentFormValues } from "./AssessmentNewPage";
 
 export default function AssessmentEditPage() {
@@ -57,22 +56,16 @@ export default function AssessmentEditPage() {
   // shows nothing if the `value` doesn't match a SelectItem).
   const loadedTimeLimitRef = useRef<(typeof TIME_LIMIT_OPTIONS)[number]>(45);
 
-  const {
-    register,
-    handleSubmit,
-    control,
-    setValue,
-    reset,
-    formState: { errors },
-  } = form;
+  const { register, handleSubmit, control, setValue, reset } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "skills" });
 
   // The value shown must always be a valid TIME_LIMIT_OPTIONS entry — otherwise Radix
   // Select renders empty (no matching SelectItem). Falls back to the loaded value.
-  const safeTimeLimit =
-    (TIME_LIMIT_OPTIONS as readonly number[]).includes(form.getValues("time_limit_min"))
-      ? (form.watch("time_limit_min") as (typeof TIME_LIMIT_OPTIONS)[number])
-      : loadedTimeLimitRef.current;
+  const safeTimeLimit = (TIME_LIMIT_OPTIONS as readonly number[]).includes(
+    form.getValues("time_limit_min")
+  )
+    ? (form.watch("time_limit_min") as (typeof TIME_LIMIT_OPTIONS)[number])
+    : loadedTimeLimitRef.current;
 
   useEffect(() => {
     if (data?.assessment) {

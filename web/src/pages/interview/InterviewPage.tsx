@@ -121,6 +121,7 @@ export default function InterviewPage() {
       setConnectionLostLong(false);
       if (state === "active" && !micMutedRef.current) unmuteRef.current?.();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleReconnected = useCallback(() => {

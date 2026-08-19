@@ -143,6 +143,7 @@ export function useAudioWebSocket({
         onStateChange("complete");
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     sessionId,
     token,

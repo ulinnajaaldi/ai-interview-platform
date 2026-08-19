@@ -14,7 +14,6 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
-  arrayMove,
 } from "@dnd-kit/sortable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,7 +65,6 @@ export default function AssessmentNewPage() {
     handleSubmit,
     control,
     setValue,
-    watch,
     formState: { errors },
   } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "skills" });

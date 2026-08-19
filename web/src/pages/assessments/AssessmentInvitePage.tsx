@@ -13,7 +13,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useGetAssessment, useGetAssessmentSessions, useCreateSession } from "@/useCases/assessments";
+import {
+  useGetAssessment,
+  useGetAssessmentSessions,
+  useCreateSession,
+} from "@/useCases/assessments";
 import { LEVEL_LABELS } from "@/utils/constants";
 import { usePolling } from "@/hooks/usePolling";
 import {
@@ -27,7 +31,7 @@ import {
   UserRound,
   RotateCcw,
 } from "lucide-react";
-import type { Assessment, Session } from "@/types";
+import type { Session } from "@/types";
 
 function SessionRow({
   session,
