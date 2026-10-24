@@ -7,7 +7,6 @@ on:
 jobs:
   model-manifest:
     runs-on: ubuntu-latest
-    continue-on-error: true
     defaults:
       run:
         working-directory: api
@@ -31,6 +30,10 @@ jobs:
           fi
 
       - name: Validate model manifest
+        # Advisory: the live Google API probe depends on network/quota and an optional
+        # secret - external failures must not block a PR. The deterministic docs lint
+        # below is the blocking gate.
+        continue-on-error: true
         run: RAILS_ENV=test bundle exec rake model_manifest:validate
 
       - name: Docs drift lint
