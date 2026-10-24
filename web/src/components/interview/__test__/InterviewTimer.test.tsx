@@ -1,6 +1,6 @@
 import { render, screen, act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import InterviewTimer from "./InterviewTimer";
+import InterviewTimer from "../InterviewTimer";
 
 describe("InterviewTimer", () => {
   beforeEach(() => {

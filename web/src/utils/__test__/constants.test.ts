@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseLevel } from "./constants";
+import { parseLevel } from "../constants";
 
 describe("parseLevel", () => {
   test("parses numeric string", () => {
