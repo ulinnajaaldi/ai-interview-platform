@@ -21,10 +21,12 @@ namespace :model_manifest do
       'GEMINI_PRO_MODEL'   => 'generateContent'
     }
 
+    # Live-preview models are only listed on /v1beta (v1 returns 404 for them),
+    # while flash/pro appear on both with generateContent — probe v1beta uniformly.
     results = Gemini::ModelManifest.catalog.map do |entry|
       name = entry[:name]
       method = expected_methods.fetch(entry[:env_key])
-      uri = URI("https://generativelanguage.googleapis.com/v1/models/#{name}?key=#{key}")
+      uri = URI("https://generativelanguage.googleapis.com/v1beta/models/#{name}?key=#{key}")
 
       begin
         res = Net::HTTP.get_response(uri)
