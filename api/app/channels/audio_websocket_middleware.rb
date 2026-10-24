@@ -8,12 +8,30 @@ require 'monitor'
 class AudioWebSocketMiddleware
   AUDIO_PATH_PATTERN = %r{\A/ws/sessions/([^/]+)/audio\z}
 
-  # Thread-safe registry: session_id => browser_ws (one active candidate connection per session).
-  # Used by the controller to close the candidate's WebSocket when the assessor ends the session.
+  # Thread-safe registry: session_id => browser_ws (one active candidate connection per
+  # session, per PROCESS). Used by close_session_locally to close the candidate's
+  # WebSocket when the assessor ends the session. Cross-process closes are fanned out
+  # over CONTROL_CHANNEL so the worker that actually holds the connection does the close.
   CONNECTIONS = {}
   CONNECTIONS_MONITOR = Monitor.new
 
+  # Control bus for multi-worker / multi-replica deployments: any process can publish
+  # a command (e.g. assessor ends session via HTTP on worker A) and every process
+  # subscribed here applies it to the connections it holds locally.
+  CONTROL_CHANNEL = 'audio_ws:control'
+
+  # Closes the candidate's WebSocket for a session regardless of which worker/replica
+  # holds it: local fast-path for this process, plus a control-channel broadcast for
+  # the others. Registry deletion makes the two paths idempotent — whichever runs
+  # first wins, the other no-ops.
   def self.close_session(session_id)
+    close_session_locally(session_id)
+    publish_control_command({ event: 'close_session', session_id: session_id.to_i })
+  end
+
+  # Performs the actual close in THIS process; no-op unless this worker holds
+  # the candidate's WebSocket for that session.
+  def self.close_session_locally(session_id)
     ws = nil
     CONNECTIONS_MONITOR.synchronize { ws = CONNECTIONS.delete(session_id.to_i) }
     return unless ws&.open?
@@ -26,7 +44,57 @@ class AudioWebSocketMiddleware
       EM.add_timer(0.3) { ws.close rescue nil }
     end
   rescue => e
-    Rails.logger.error("[AudioWS] close_session(#{session_id}) failed: #{e.class} #{e.message}")
+    Rails.logger.error("[AudioWS] close_session_locally(#{session_id}) failed: #{e.class} #{e.message}")
+  end
+
+  def self.handle_control_message(message)
+    return unless message.is_a?(Hash)
+
+    case message['event']
+    when 'close_session' then close_session_locally(message['session_id'])
+    end
+  end
+
+  def self.publish_control_command(payload)
+    Thread.new do
+      redis = ::Redis.new(url: ENV.fetch('REDIS_URL', 'redis://localhost:6379/1'))
+      redis.publish(CONTROL_CHANNEL, payload.to_json)
+    rescue => e
+      Rails.logger.error("[AudioWS] control publish failed (#{payload['event']}): #{e.class}: #{e.message}")
+    ensure
+      redis&.close
+    end
+  end
+
+  # One Redis subscriber per process, started lazily when the first audio WS opens in
+  # this worker (post-fork, so preload_app! cannot orphan the thread). Reconnects
+  # with a 1s pause if Redis drops.
+  def self.start_control_subscriber
+    CONNECTIONS_MONITOR.synchronize do
+      return if @control_subscriber&.alive?
+
+      @control_subscriber = Thread.new do
+        loop do
+          redis = ::Redis.new(url: ENV.fetch('REDIS_URL', 'redis://localhost:6379/1'))
+          redis.subscribe(CONTROL_CHANNEL) do |on|
+            on.message do |_channel, payload|
+              handle_control_message(JSON.parse(payload))
+            rescue => e
+              Rails.logger.error("[AudioWS] control message failed: #{e.class}: #{e.message}")
+            end
+          end
+        rescue => e
+          Rails.logger.error("[AudioWS] control subscriber disconnected: #{e.class}: #{e.message} — retrying in 1s")
+          sleep 1
+        ensure
+          begin
+            redis&.close
+          rescue StandardError
+            nil
+          end
+        end
+      end
+    end
   end
 
   RECONNECT_BACKOFF = [1, 2, 4, 8, 15, 30, 30, 30].freeze
@@ -93,6 +161,8 @@ class AudioWebSocketMiddleware
     # Register in the connection registry so the controller can close this WS
     # when the assessor ends the session remotely.
     CONNECTIONS_MONITOR.synchronize { CONNECTIONS[session.id] = browser_ws }
+    # Ensure this worker listens for cross-process close commands (see CONTROL_CHANNEL).
+    self.class.start_control_subscriber
     connect_to_gemini(browser_ws, state)
   rescue StandardError => e
     Rails.logger.error("[AudioWS] Exception in on:open: #{e.class}: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
