@@ -60,9 +60,9 @@ module Gemini
       response = @connection.post(generate_url, request_body(prompt, temperature), request_headers)
       parse_response(response)
     rescue Faraday::TimeoutError => e
-      raise TimeoutError.new("Gemini API timeout after #{@timeout}s: #{e.message}", status: NETWORK_FAILURE_STATUS)
+      raise TimeoutError.new("Gemini API timeout after #{@timeout}s: #{e.message}")
     rescue Faraday::Error => e
-      raise ApiError.new("Gemini API error: #{e.class}: #{e.message}", status: NETWORK_FAILURE_STATUS)
+      raise ApiError.new("Gemini API error: #{e.class}: #{e.message}")
     end
 
     # Triggers model fallback when the current model is rejected or unusable right now:
